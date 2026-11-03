@@ -1,6 +1,6 @@
 {
 	"name": "effect-storytime",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"private": true,
 	"description": "Effect-native story testing: pure state machines whose side effects are Schema data, told and checked as strict stories.",
 	"files": [
