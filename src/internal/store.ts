@@ -13,19 +13,43 @@ export const loadOrInitial = <State, Input, Event, Rejection, Key, E>(
 		Option.getOrElse(() => decider.initial)
 	);
 
-/** Loads, decides and saves (only when there are events) in one transaction of `store`. */
+/** What an input gave, events or a rejection, and the state its events reach. */
+export interface Ruling<State, Event, Rejection> {
+	readonly decided: Result.Result<ReadonlyArray<Event>, Rejection>;
+	readonly reached: State;
+}
+
+/** Decides an input and folds its events into the state. */
+export const rule =
+	<State, Input, Event, Rejection>(decider: Decider<State, Input, Event, Rejection>) =>
+	(state: State, input: Input): Effect.Effect<Ruling<State, Event, Rejection>> =>
+		Effect.sync(() => {
+			const decided = decider.decide(state, input);
+			return {
+				decided,
+				reached: Result.isSuccess(decided) ? decided.success.reduce(decider.evolve, state) : state
+			};
+		});
+
+/**
+ * Loads, rules and saves (only when there are events) in one transaction of `store`. `ruling`
+ * is `rule` for `handle` and the strictly checked one for `Decision.against`.
+ */
 export const decideIn =
-	<State, Input, Event, Rejection, Key, E>(
+	<State, Input, Event, Rejection, Key, E, X>(
 		decider: Decider<State, Input, Event, Rejection>,
-		store: Store<Key, State, Event, E>
+		store: Store<Key, State, Event, E>,
+		ruling: (state: State, input: Input) => Effect.Effect<Ruling<State, Event, Rejection>, X>
 	) =>
-	(key: Key, input: Input): Effect.Effect<Result.Result<ReadonlyArray<Event>, Rejection>, E> =>
+	(key: Key, input: Input): Effect.Effect<Result.Result<ReadonlyArray<Event>, Rejection>, E | X> =>
 		store.transaction(
 			Effect.gen(function* () {
-				const state = yield* loadOrInitial(decider, store, key);
-				const decided = decider.decide(state, input);
+				const { decided, reached } = yield* ruling(
+					yield* loadOrInitial(decider, store, key),
+					input
+				);
 				if (Result.isSuccess(decided) && decided.success.length > 0) {
-					yield* store.save(key, decided.success.reduce(decider.evolve, state), decided.success);
+					yield* store.save(key, reached, decided.success);
 				}
 				return decided;
 			})

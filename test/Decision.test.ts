@@ -58,12 +58,7 @@ const failure = (decision: Decision.Decision<Membership, Input, Event, Rejection
 
 const evolved = (evolve: (current: Membership, event: Event) => Membership) =>
 	failure(
-		Decision.make(
-			'evolve',
-			Decider.make({ ...membership, evolve }),
-			given({ ...none }),
-			when(grant)
-		)
+		Decision.make('evolve', Decider.make({ ...membership, evolve }), given(none), when(grant))
 	);
 
 const blank = { disableChecks: true };
@@ -144,6 +139,49 @@ describe('Decision', () => {
 				message: 'the state differs',
 				expected: '{"active":0,"checkedAt":null,"source":"teachable"}',
 				actual: '{"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}'
+			});
+		}).pipe(Effect.provide(Memberships.layer))
+	);
+
+	it.effect('holds a store run to every strict rule', () =>
+		Effect.gen(function* () {
+			const broken = Decision.make('given', membership, given({ ...none, active: true }));
+			expect(yield* Effect.flip(Decision.against(broken, Memberships, 'u1'))).toMatchObject({
+				step: 1,
+				message: 'invariant checkedWhenActive does not hold'
+			});
+			const unchecked = Decider.make({
+				...membership,
+				evolve: (current) => ({ ...current, active: true })
+			});
+			const evolving = Decision.make(
+				'evolved',
+				unchecked,
+				given(none),
+				when(grant),
+				accepted(granted)
+			);
+			expect(yield* Effect.flip(Decision.against(evolving, Memberships, 'u2'))).toMatchObject({
+				step: 2,
+				message: 'invariant checkedWhenActive does not hold'
+			});
+			const throwing = variant(() => {
+				throw new Error('no rule');
+			});
+			const throws = Decision.make('throws', throwing, given(none), when(grant));
+			expect(yield* Effect.flip(Decision.against(throws, Memberships, 'u3'))).toMatchObject({
+				step: 2,
+				message: 'decide threw: Error: no rule'
+			});
+			const invalid = Decider.make({
+				...membership,
+				evolve: (current) => ({ ...current, checkedAt: '' })
+			});
+			const drops = Decision.make('invalid', invalid, given(none), when(grant), accepted(granted));
+			expect(yield* Effect.flip(Decision.against(drops, Memberships, 'u4'))).toMatchObject({
+				step: 2,
+				message:
+					'the state is invalid: Expected a value with a length of at least 1\n  at ["checkedAt"]'
 			});
 		}).pipe(Effect.provide(Memberships.layer))
 	);
@@ -407,7 +445,7 @@ describe('Decision', () => {
 					return membership.decide(current, input);
 				});
 				expect(
-					yield* failure(Decision.make('mutates', mutating, given({ ...none }), when(grant)))
+					yield* failure(Decision.make('mutates', mutating, given(none), when(grant)))
 				).toMatchObject({ step: 2, message: 'decide changed its input' });
 				let calls = 0;
 				const drifting = variant(() => {

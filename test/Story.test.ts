@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Effect, Schema } from 'effect';
-import { Program, Story } from '../src/index.ts';
+import { Arbitrary, Effect, Schema, SchemaTransformation } from 'effect';
+import { Exploration, Program, Story } from '../src/index.ts';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Conversation from './examples/conversation.ts';
 import * as Lamp from './examples/lamp.ts';
@@ -347,19 +347,23 @@ describe('Story', () => {
 			})
 		);
 
-		it.effect('an update that mutates its input, even inside a Date', () =>
-			Effect.gen(function* () {
-				const mutating = Lamp.variant((lamp) => {
-					lamp.at.setUTCDate(lamp.at.getUTCDate() + 1);
-					return { model: lamp };
-				});
-				const fresh = { ...Lamp.off, at: new Date(Lamp.off.at) };
-				const story = Story.make('mutates', mutating, given(fresh), send(Lamp.switched()));
-				expect(yield* failure(story)).toMatchObject({
-					step: 2,
-					message: 'update changed its input'
-				});
-			})
+		it.effect(
+			'an update that mutates its input, even inside a Date, leaving the story intact',
+			() =>
+				Effect.gen(function* () {
+					const mutating = Lamp.variant((lamp, message) => {
+						lamp.at.setUTCDate(lamp.at.getUTCDate() + 1);
+						message.at.setUTCDate(message.at.getUTCDate() + 1);
+						return { model: lamp };
+					});
+					const story = Story.make('mutates', mutating, given(Lamp.off), send(Lamp.switched()));
+					const before = Story.lines(story);
+					expect(yield* failure(story)).toMatchObject({
+						step: 2,
+						message: 'update changed its input'
+					});
+					expect(Story.lines(story)).toEqual(before);
+				})
 		);
 
 		it.effect('an update that gives another result for the same input', () =>
@@ -412,6 +416,48 @@ describe('Story', () => {
 					step: 1,
 					line: 'given (not JSON: Expected JSON value at ["value"])',
 					message: 'the model does not survive JSON: Expected JSON value\n  at ["value"]'
+				});
+				const producing = Program.make({ ...opaque, update: () => ({ model: { value: 1n } }) });
+				const produced = yield* failure(
+					Story.make('produced', producing, given({ value: 0 }), send(Lamp.switched()))
+				);
+				expect(produced).toBeInstanceOf(Story.StoryFailure);
+				expect(produced).toMatchObject({
+					step: 2,
+					message: 'the model is not JSON: Expected JSON value\n  at ["value"]'
+				});
+				const explored = yield* Effect.flip(
+					Exploration.check(
+						Exploration.make('explored', producing, {
+							given: Arbitrary.Constant({ value: 0 }),
+							send: Arbitrary.Constant(Lamp.switched())
+						})
+					)
+				);
+				expect(explored).toMatchObject({
+					message: produced.message,
+					counterexample: [
+						'given {"value":0}',
+						'send Switched {"at":"2026-11-04T00:00:00.000Z","by":1}'
+					]
+				});
+				expect(explored.replay).toBeTypeOf('string');
+			})
+		);
+
+		it.effect('a model that changes through JSON', () =>
+			Effect.gen(function* () {
+				const trimmed = Program.make({
+					Model: Schema.String.pipe(Schema.decode(SchemaTransformation.trim())),
+					Message: Lamp.Message,
+					Command: Lamp.Command,
+					update: (current) => ({ model: current })
+				});
+				expect(yield* failure(Story.make('lossy', trimmed, given(' padded ')))).toMatchObject({
+					step: 1,
+					message: 'the model changes through JSON',
+					expected: '" padded "',
+					actual: '"padded"'
 				});
 			})
 		);
@@ -641,7 +687,7 @@ describe('Story', () => {
 			})
 		);
 
-		it.effect('lets a later step cancel a command one order produced', () =>
+		it.effect('fails a command one order produced and a later step cancelled unasserted', () =>
 			Effect.gen(function* () {
 				const story = Story.make(
 					'a recall also stops the next step',
@@ -654,7 +700,32 @@ describe('Story', () => {
 					),
 					commands()
 				);
-				yield* Story.run(story);
+				expect(yield* failure(story)).toMatchObject({
+					step: 6,
+					message:
+						'in order 5, 6: RunStep {"step":1,"turn":"t1"} was cancelled before any step asserted it'
+				});
+			})
+		);
+
+		it.effect('owes the steps after a group the commands produced before it', () =>
+			Effect.gen(function* () {
+				const story = Story.make(
+					'a recall after the group stops an unasserted step',
+					Conversation.conversation,
+					given(Conversation.idle),
+					send(Started.make({ turn: 't1' })),
+					anyOrder(
+						satisfies('working', Conversation.Phase.guards.Working),
+						model(Conversation.Phase.cases.Working.make({ turn: 't1', step: 0, output: '' }))
+					),
+					send(Recall.make({ turn: 't1' }))
+				);
+				expect(yield* failure(story)).toMatchObject({
+					step: 6,
+					message:
+						'in order 4, 5: RunStep {"step":0,"turn":"t1"} was cancelled before any step asserted it'
+				});
 			})
 		);
 

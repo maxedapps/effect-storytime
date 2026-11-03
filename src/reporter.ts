@@ -14,10 +14,12 @@ export interface Options {
 	readonly outputFile?: string;
 }
 
-const byPlace = Order.combine(
+/** By file and test, then by content, as a test's concurrent tales finish in any order. */
+const byPlace = Order.combineAll([
 	Order.mapInput(Order.String, (record: StoryRecord) => record.file),
-	Order.mapInput(Order.String, (record: StoryRecord) => record.test)
-);
+	Order.mapInput(Order.String, (record: StoryRecord) => record.test),
+	Order.mapInput(Order.String, (record: StoryRecord) => JSON.stringify(record))
+]);
 
 export class StoryReporter implements Reporter {
 	readonly #outputFile: string;

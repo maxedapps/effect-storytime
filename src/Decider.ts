@@ -4,7 +4,7 @@
  */
 import { Effect } from 'effect';
 import type { Context, Option, Result, Schema } from 'effect';
-import { decideIn } from './internal/store.ts';
+import { decideIn, rule } from './internal/store.ts';
 import type { Invariants } from './Program.ts';
 
 export interface Decider<State, Input, Event, Rejection> {
@@ -58,5 +58,5 @@ export const handle =
 	) =>
 	(key: Key, input: Input): Effect.Effect<ReadonlyArray<Event>, Rejection | E, Id> =>
 		Effect.flatMap(Store, (store) =>
-			Effect.flatMap(decideIn(decider, store)(key, input), Effect.fromResult)
+			Effect.flatMap(decideIn(decider, store, rule(decider))(key, input), Effect.fromResult)
 		);

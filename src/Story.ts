@@ -146,6 +146,12 @@ interface Entry<Model, Message, Command> {
 	readonly children: ReadonlyArray<Entry<Model, Message, Command>>;
 }
 
+/** Where one order of a story's `anyOrder`s got to, and how to name that order. */
+interface Reached<Model, Command> {
+	readonly state: State<Model, Command>;
+	readonly order: string;
+}
+
 const layout = <Model, Message extends Tagged, Command extends Tagged>(
 	program: Program<Model, Message, Command>,
 	body: Steps<Model, Message, Command>
@@ -246,10 +252,10 @@ export const run = Effect.fnUntraced(function* <
 
 	const end = { no: all.length + 1, line: 'end' };
 
-	const finish = (state: State<Model, Command>, order: string) => {
+	const finish = ({ state, order }: Reached<Model, Command>) => {
 		const owed = state.pending.filter((entry) => entry.owed);
 		return owed.length === 0
-			? Effect.succeed(Arr.of(state))
+			? Effect.void
 			: Effect.fail(
 					fail(
 						end,
@@ -265,13 +271,14 @@ export const run = Effect.fnUntraced(function* <
 
 	const [first] = all;
 
+	/** Runs `queue` from `state`, once per order of every `anyOrder` in it. */
 	const go = (
 		state: State<Model, Command>,
 		queue: ReadonlyArray<Entry<Model, Message, Command>>,
 		order: string
-	): Effect.Effect<Arr.NonEmptyReadonlyArray<State<Model, Command>>, StoryFailure> => {
+	): Effect.Effect<Arr.NonEmptyReadonlyArray<Reached<Model, Command>>, StoryFailure> => {
 		const [head, ...rest] = queue;
-		if (head === undefined) return finish(state, order);
+		if (head === undefined) return Effect.succeed(Arr.of({ state, order }));
 		const then = (next: Effect.Effect<State<Model, Command>, Problem>) =>
 			next.pipe(
 				Effect.mapError(fail(head, order)),
@@ -289,22 +296,30 @@ export const run = Effect.fnUntraced(function* <
 			Resolve: ({ command, reply }) => then(rules.resolve(state, command, reply)),
 			Emit: ({ command, message }) => then(rules.emit(state, command, message)),
 			Restart: () => then(rules.restart(state)),
+			// Each order runs with its own cancellations, whose replies it skips; the rest runs after
+			// each order with the cancellations from before it.
 			AnyOrder: () =>
 				Effect.map(
 					Effect.forEach(permutations(head.children), (units) =>
-						go(
-							{
-								...state,
-								// Stryker disable next-line ArrayDeclaration: no command has an unknown key, so it never matches
-								cancelled: Option.orElseSome(state.cancelled, () => [])
-							},
-							[...units, ...rest],
-							`${order}in order ${flatten(units)
-								.map((entry) => entry.no)
-								.join(', ')}: `
+						Effect.flatMap(
+							go(
+								{
+									...state,
+									// Stryker disable next-line ArrayDeclaration: no command has an unknown key, so it never matches
+									cancelled: Option.orElseSome(state.cancelled, () => [])
+								},
+								units,
+								`${order}in order ${flatten(units)
+									.map((entry) => entry.no)
+									.join(', ')}: `
+							),
+							(orders) =>
+								Effect.forEach(orders, (reached) =>
+									go({ ...reached.state, cancelled: state.cancelled }, rest, reached.order)
+								)
 						)
 					),
-					Arr.flatten
+					(each) => Arr.flatten(Arr.flatten(each))
 				),
 			Group: () => go(state, [...head.children, ...rest], order)
 		});
@@ -324,10 +339,12 @@ export const run = Effect.fnUntraced(function* <
 		return yield* fail(crowded, '')(new Problem({ message: 'anyOrder takes 2 to 5 steps' }));
 	}
 	const initial = yield* Effect.mapError(rules.start(first.step.model), fail(first, ''));
-	const finals = yield* go(initial, entries, '');
+	const reached = yield* go(initial, entries, '');
+	yield* Effect.forEach(reached, finish);
+	const [{ state: final }] = reached;
 	return {
-		model: finals[0].model,
-		final: describer(program.Model)(finals[0].model),
-		cases: Arr.dedupe(finals.flatMap((final) => final.cases)).toSorted()
+		model: final.model,
+		final: describer(program.Model)(final.model),
+		cases: Arr.dedupe(reached.flatMap(({ state }) => state.cases)).toSorted()
 	};
 });

@@ -132,6 +132,55 @@ describe('Exploration', () => {
 		})
 	);
 
+	it.effect('shows and replays the start an update mutated as it was given', () =>
+		Effect.gen(function* () {
+			const mutating = Lamp.variant((lamp) => {
+				Object.assign(lamp, { count: lamp.count + 1 });
+				return { model: lamp };
+			});
+			const mutates = Exploration.make('mutates', mutating, { given: off, send: switches });
+			const failure = yield* Effect.flip(Exploration.check(mutates));
+			expect(failure.message).toBe('update changed its input');
+			expect(failure.counterexample?.[0]).toBe(given);
+			const replayed = yield* Effect.flip(
+				Exploration.check(mutates, { replay: failure.replay ?? '' })
+			);
+			expect(replayed.counterexample).toEqual(failure.counterexample);
+		})
+	);
+
+	it.effect('answers with any reply, not just the first few', () =>
+		Effect.gen(function* () {
+			const Said = Schema.TaggedUnion({ Asked: {}, Replied: { n: Schema.Int } });
+			const Asks = Schema.TaggedUnion({ Ask: {} });
+			const picky = Program.make({
+				Model: Schema.Struct({ last: Schema.Int }),
+				Message: Said,
+				Command: Asks,
+				update: (current: { readonly last: number }, message: typeof Said.Type) =>
+					Said.guards.Asked(message)
+						? { model: current, commands: [Asks.cases.Ask.make({})] }
+						: { model: { last: message.n } },
+				invariants: { notTheNinth: (current) => current.last !== 8 }
+			});
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.make('a ninth reply', picky, {
+						given: Arbitrary.Constant({ last: 0 }),
+						send: Arbitrary.Constant(Said.cases.Asked.make({})),
+						replies: () => Array.from({ length: 9 }, (_, n) => Said.cases.Replied.make({ n })),
+						restarts: false
+					})
+				)
+			);
+			expect(failure.counterexample).toEqual([
+				'given {"last":0}',
+				'send Asked',
+				'resolve Ask → Replied {"n":8}'
+			]);
+		})
+	);
+
 	it.effect('fails at the given when the start is invalid', () =>
 		Effect.gen(function* () {
 			const failure = yield* Effect.flip(
@@ -214,10 +263,10 @@ describe('Exploration', () => {
 			expect(failure.step).toBe(5);
 			expect(failure.counterexample).toEqual([
 				'given Ready {"left":2,"turns":[]}',
-				'send Asked {"text":"question t2","turn":"t2"}',
-				'resolve Ask {"text":"question t2","turn":"t2"} → Answered {"left":1,"turn":"t2"}',
 				'send Asked {"text":"question t1","turn":"t1"}',
-				'emit Ask {"text":"question t1","turn":"t1"} → Delta {"text":"hi","turn":"t1"}'
+				'resolve Ask {"text":"question t1","turn":"t1"} → Answered {"left":1,"turn":"t1"}',
+				'send Asked {"text":"question t2","turn":"t2"}',
+				'emit Ask {"text":"question t2","turn":"t2"} → Delta {"text":"hi","turn":"t2"}'
 			]);
 		})
 	);

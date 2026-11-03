@@ -36,6 +36,42 @@
 			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
 		},
 		{
+			"kind": "Decision",
+			"title": "a membership starts inactive",
+			"file": "checks/membership.stories.ts",
+			"test": "tells tales in any order",
+			"lines": [
+				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+			],
+			"status": "passed",
+			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+		},
+		{
+			"kind": "Decision",
+			"title": "only an active membership is revoked",
+			"file": "checks/membership.stories.ts",
+			"test": "tells tales in any order",
+			"lines": [
+				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+				"when Revoke",
+				"rejected NotActive"
+			],
+			"status": "failed"
+		},
+		{
+			"kind": "Decision",
+			"title": "only an active membership is revoked",
+			"file": "checks/membership.stories.ts",
+			"test": "tells tales in any order",
+			"lines": [
+				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+				"when Revoke",
+				"rejected NotActive"
+			],
+			"status": "passed",
+			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+		},
+		{
 			"kind": "Story",
 			"title": "a question is forgotten",
 			"file": "stories/chat.stories.ts",

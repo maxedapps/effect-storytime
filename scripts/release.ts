@@ -19,7 +19,8 @@ const git = (
 	execFileSync('git', args, {
 		encoding: 'utf8',
 		env: { ...process.env, ...options.env },
-		input: options.input
+		input: options.input,
+		timeout: 120_000
 	}).trim();
 
 if (git(['status', '--porcelain']) !== '') throw new Error('Commit or stash every change first.');
@@ -28,7 +29,7 @@ const manifest = Schema.decodeSync(Schema.fromJsonString(Manifest))(
 	readFileSync('package.json', 'utf8')
 );
 const tag = `v${manifest.version}`;
-execFileSync('pnpm', ['build'], { stdio: 'inherit' });
+execFileSync('pnpm', ['build'], { stdio: 'inherit', timeout: 300_000 });
 
 const scratch = mkdtempSync(join(tmpdir(), 'storytime-release-'));
 try {

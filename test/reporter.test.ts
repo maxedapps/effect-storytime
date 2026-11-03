@@ -11,13 +11,17 @@ import * as StoryRecord from '../src/StoryRecord.ts';
 
 const root = fileURLToPath(new URL('fixtures/report', import.meta.url));
 
-/** Runs the fixture stories in their two projects and reads the report the reporter wrote. */
-const report = (options: Options) =>
+/**
+ * Runs the fixture stories in their two projects and reads the report the reporter wrote;
+ * `reversed` tells a test's tales in the opposite order.
+ */
+const report = (options: Options, reversed: boolean) =>
 	Effect.promise(async () => {
 		const vitest = await createVitest({
 			root,
 			config: join(root, 'vitest.config.ts'),
 			watch: false,
+			env: { STORYTIME_REVERSED: reversed ? '1' : '0' },
 			reporters: [new StoryReporter(options)]
 		});
 		await vitest.start();
@@ -35,14 +39,14 @@ const scratch = Effect.acquireRelease(
 
 describe('StoryReporter', () => {
 	it.effect(
-		'writes every told tale, sorted, the same on every run',
+		'writes every told tale, sorted, the same whatever order they were told in',
 		() =>
 			Effect.gen(function* () {
 				const dir = yield* scratch;
-				const first = yield* report({}).pipe(
+				const first = yield* report({}, false).pipe(
 					Effect.ensuring(Effect.promise(() => rm(join(root, 'stories.json'))))
 				);
-				const second = yield* report({ outputFile: join(dir, 'nested', 'stories.json') });
+				const second = yield* report({ outputFile: join(dir, 'nested', 'stories.json') }, true);
 				expect(second).toBe(first);
 				yield* Effect.promise(() => expect(first).toMatchFileSnapshot('fixtures/report.json'));
 				expect(yield* StoryRecord.decode(first)).toEqual(JSON.parse(first));

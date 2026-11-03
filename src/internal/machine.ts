@@ -4,8 +4,8 @@
  */
 import { Effect, identity, Option } from 'effect';
 import type { Next, Program, Tagged } from '../Program.ts';
-import { describer, stringifier, tagger } from './canonical.ts';
-import { attempt, conforms, holds, Problem, pure, roundTrips } from './check.ts';
+import { tagger } from './canonical.ts';
+import { attempt, holds, Problem, pure, role } from './check.ts';
 
 interface Pending<Command> {
 	readonly key: string;
@@ -17,7 +17,7 @@ interface Pending<Command> {
 export interface State<Model, Command> {
 	readonly model: Model;
 	readonly pending: ReadonlyArray<Pending<Command>>;
-	/** Keys cancelled since the enclosing `anyOrder` began; none outside one. */
+	/** Keys cancelled since the enclosing `anyOrder` began, whose replies it skips; none outside one. */
 	readonly cancelled: Option.Option<ReadonlyArray<string>>;
 	readonly cases: ReadonlyArray<string>;
 }
@@ -32,35 +32,31 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 	program: Program<Model, Message, Command>,
 	owing: boolean
 ) => {
-	const showModel = describer(program.Model);
-	const showCommand = describer(program.Command);
-	const modelKey = stringifier(program.Model);
-	const commandKey = stringifier(program.Command);
-	const messageKey = stringifier(program.Message);
-	const validModel = conforms(program.Model, 'the model');
-	const validMessage = conforms(program.Message, 'the message');
-	const validCommand = conforms(program.Command, 'the command');
-	const durable = roundTrips(program.Model, 'the model');
-	const invariants = holds(program.invariants, showModel);
+	const the = {
+		model: role(program.Model, 'the model'),
+		message: role(program.Message, 'the message'),
+		command: role(program.Command, 'the command')
+	};
+	const invariants = holds(program.invariants, the.model.show);
 	const modelTag = tagger(program.Model);
 	const modelCase = (value: Model) =>
 		Option.match(modelTag(value), { onNone: () => [], onSome: (tag) => [`Model.${tag}`] });
 
 	const pendingLines = (pending: ReadonlyArray<Pending<Command>>) =>
 		pending
-			.map((entry) => showCommand(entry.command))
+			.map((entry) => the.command.show(entry.command))
 			.toSorted()
 			.join('\n');
 
 	const output = (next: Next<Model, Command>) =>
 		Effect.gen(function* () {
-			yield* validModel(next.model);
-			yield* Effect.forEach(next.commands ?? [], validCommand);
-			yield* Effect.forEach(next.cancels ?? [], validCommand);
+			yield* the.model.valid(next.model);
+			yield* Effect.forEach(next.commands ?? [], the.command.valid);
+			yield* Effect.forEach(next.cancels ?? [], the.command.valid);
 			return JSON.stringify({
-				model: modelKey(next.model),
-				commands: (next.commands ?? []).map(commandKey),
-				cancels: (next.cancels ?? []).map(commandKey)
+				model: yield* the.model.key(next.model),
+				commands: yield* Effect.forEach(next.commands ?? [], the.command.key),
+				cancels: yield* Effect.forEach(next.cancels ?? [], the.command.key)
 			});
 		});
 
@@ -71,22 +67,20 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		let pending = state.pending;
 		let cancelled = state.cancelled;
 		for (const command of next.cancels ?? []) {
-			const key = commandKey(command);
-			const found = pending.find((entry) => entry.key === key);
-			// Inside anyOrder a command one order produced can't be asserted by the shared steps.
-			if (found?.owed && Option.isNone(cancelled)) {
+			const key = yield* the.command.key(command);
+			if (pending.some((entry) => entry.key === key && entry.owed)) {
 				return yield* new Problem({
-					message: `${showCommand(command)} was cancelled before any step asserted it`
+					message: `${the.command.show(command)} was cancelled before any step asserted it`
 				});
 			}
 			pending = pending.filter((entry) => entry.key !== key);
 			cancelled = Option.map(cancelled, (keys) => [...keys, key]);
 		}
 		for (const command of next.commands ?? []) {
-			const key = commandKey(command);
+			const key = yield* the.command.key(command);
 			pending = [...pending.filter((entry) => entry.key !== key), { key, command, owed: owing }];
 		}
-		yield* durable(next.model);
+		yield* the.model.copy(next.model);
 		yield* invariants(next.model);
 		return {
 			model: next.model,
@@ -100,13 +94,17 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		};
 	});
 
-	/** Runs `update` on a message. */
+	/** Runs `update` on a copy of a message, so a mutation never reaches the story's own. */
 	const send = Effect.fnUntraced(function* (state: State<Model, Command>, message: Message) {
-		yield* validMessage(message);
+		yield* the.message.valid(message);
+		const copy = yield* the.message.copy(message);
 		const next = yield* pure(
 			'update',
-			() => modelKey(state.model) + messageKey(message),
-			() => program.update(state.model, message),
+			Effect.map(
+				Effect.all([the.model.key(state.model), the.message.key(copy)]),
+				([model, sent]) => model + sent
+			),
+			() => program.update(state.model, copy),
 			output
 		);
 		return yield* settle({ ...state, cases: [...state.cases, `Message.${tagOf(message)}`] }, next);
@@ -116,46 +114,50 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 	 * Finds a pending command by its key. A command cancelled earlier in the same `anyOrder` gives
 	 * none, so its reply is skipped.
 	 */
-	const take = (state: State<Model, Command>, command: Command) => {
-		const key = commandKey(command);
-		return Effect.gen(function* () {
-			yield* validCommand(command);
+	const take = (state: State<Model, Command>, command: Command) =>
+		Effect.gen(function* () {
+			yield* the.command.valid(command);
+			const key = yield* the.command.key(command);
 			const found = state.pending.find((entry) => entry.key === key);
 			if (found) return Option.some(key);
 			if (Option.exists(state.cancelled, (keys) => keys.includes(key))) return Option.none();
 			return yield* new Problem({
-				message: `${showCommand(command)} is not pending`,
-				expected: showCommand(command),
+				message: `${the.command.show(command)} is not pending`,
+				expected: the.command.show(command),
 				actual: pendingLines(state.pending)
 			});
 		});
-	};
 
 	return {
 		pendingLines,
 
-		/** The state a story starts from, once the model passes every check. */
+		/**
+		 * The state a story starts from, once the model passes every check. It holds the model's
+		 * decoded copy, so a callback that mutates it never changes the story's own.
+		 */
 		start: (model: Model) =>
-			Effect.as(
-				Effect.all([validModel(model), durable(model), invariants(model)]),
-				identity<State<Model, Command>>({
-					model,
+			Effect.gen(function* () {
+				yield* the.model.valid(model);
+				const copy = yield* the.model.copy(model);
+				yield* invariants(copy);
+				return identity<State<Model, Command>>({
+					model: copy,
 					pending: [],
 					cancelled: Option.none(),
-					cases: modelCase(model)
-				})
-			),
+					cases: modelCase(copy)
+				});
+			}),
 
 		send,
 
 		model: (state: State<Model, Command>, expected: Model) =>
 			Effect.gen(function* () {
-				yield* validModel(expected);
-				if (modelKey(expected) !== modelKey(state.model)) {
+				yield* the.model.valid(expected);
+				if ((yield* the.model.key(expected)) !== (yield* the.model.key(state.model))) {
 					return yield* new Problem({
 						message: 'the model differs',
-						expected: showModel(expected),
-						actual: showModel(state.model)
+						expected: the.model.show(expected),
+						actual: the.model.show(state.model)
 					});
 				}
 				return state;
@@ -170,20 +172,20 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 						: Effect.fail(
 								new Problem({
 									message: `the model does not satisfy ${label}`,
-									actual: showModel(state.model)
+									actual: the.model.show(state.model)
 								})
 							)
 			),
 
 		commands: (state: State<Model, Command>, expected: ReadonlyArray<Command>) =>
 			Effect.gen(function* () {
-				yield* Effect.forEach(expected, validCommand);
-				const wanted = expected.map(commandKey).toSorted();
+				yield* Effect.forEach(expected, the.command.valid);
+				const wanted = (yield* Effect.forEach(expected, the.command.key)).toSorted();
 				const actual = state.pending.map((entry) => entry.key).toSorted();
 				if (wanted.join('\n') !== actual.join('\n')) {
 					return yield* new Problem({
 						message: 'the pending commands differ',
-						expected: expected.map(showCommand).toSorted().join('\n'),
+						expected: expected.map(the.command.show).toSorted().join('\n'),
 						actual: pendingLines(state.pending)
 					});
 				}
@@ -236,10 +238,10 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 						actual: pendingLines(owed)
 					});
 				}
-				const stored = yield* durable(state.model);
+				const stored = yield* the.model.copy(state.model);
 				const next = yield* pure(
 					'resume',
-					() => modelKey(stored),
+					the.model.key(stored),
 					() => program.resume(stored),
 					output
 				);

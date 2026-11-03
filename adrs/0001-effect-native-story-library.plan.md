@@ -83,7 +83,7 @@ Story.make(title, program, ...steps)
   - `restart()` round-trips the model through JSON, drops every pending command and applies `resume`.
   - `anyOrder(...2–5 steps)` runs the rest of the story once per order; a `steps(...)` group inside it moves as one unit. A `resolve` or `emit` is skipped only if its command was cancelled earlier in the same order; any other missing command fails as usual.
   - `steps(...)` groups steps, so stories can share a part.
-- Every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A step that drops an owed command (a cancel, a restart) fails, so no effect leaves the story unasserted. Inside `anyOrder` a cancel may drop one: a command only one order produces cannot be named by the shared steps.
+- Every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A step that drops an owed command (a cancel, a restart) fails, so no effect leaves the story unasserted. This holds in every order of an `anyOrder`.
 - Steps type-check against the program through contextual inference.
 - `Story.run(story) ⇒ Effect<Outcome, StoryFailure>`. `Outcome` holds the final model and the cases touched.
 - `Story.lines(story)` renders plain lines from the value alone.
@@ -223,7 +223,6 @@ Plan review, round 1 (Codex GPT-6.1 Sol):
 
 Implementation amendments (to raise at the code review):
 
-- The owed rule meets `anyOrder`: a step after one order's reply cannot name a command that only that order started, so a cancel inside `anyOrder` may drop an owed command; outside it and at a restart the rule stands. Test: a recall in either order with the next step started in one of them.
 - `satisfies` takes a label: a check's source text changes under bundlers and Stryker, which would break the deterministic record.
 - Decision's `then` is `accepted`: a module exporting `then` is a thenable namespace, so `await import('effect-storytime/Decision')` would call it. `state(predicate)` became `satisfies(label, check)`, as in Story, so lines stay deterministic.
 - Explorations are their own module: `Exploration.make(title, program, { given, send?, replies?, emits?, restarts?, runs?, steps?, seed? })`, `Exploration.check(exploration, { replay? }) ⇒ Effect<Explored, StoryFailure>` and `Exploration.lines`. Inside `Story` they would make `Story` and `Exploration` import each other. `send` defaults to the Message Schema's Arbitrary; `replies` and `emits` are functions of the command, since a tag map adds nothing a `guards` check doesn't. A failure's `line` is the exploration's own line and `step` numbers the counterexample line that failed.
@@ -235,3 +234,16 @@ Implementation amendments (to raise at the code review):
 - A failure record holds `StoryFailure` details only; any other error (a store failing in `Decision.against`) records only `status: "failed"`, since its shape is unknown.
 - `ctx.task.meta.storytime` is an array: a test may tell several tales.
 - `pnpm release` reads the version from `package.json` instead of an argument, so the tag cannot disagree with the manifest, and its release commit drops `prepare` (an `effect-tsgo` patch for development), so a git install runs no script.
+
+Code review, round 1 (Codex GPT-6.1 Sol, on 4ed1426):
+
+- high bug: Loop applies a reply a command enqueued before a queued cancel or a same-key replacement was applied — fixed: each delivery carries whether its sender still runs (`dispatch` always; a command while `FiberMap.get` of its key is its own fiber), and `deliver` drops a stale one; ordered-queue regressions for a cancel and a replacement fail without the fix.
+- high bug: the `anyOrder` waiver let any cancel drop an owed command, also in the steps after the group — fixed: the waiver is gone (the amendment that added it is withdrawn), the cancelled-keys scope covers only the group's units and the suffix gets the outer scope back; a cancel of a command one order produced and a post-group cancel of an unasserted command now fail.
+- high bug: a mutating `update`, `decide` or `evolve` corrupts the tale's own given model, messages and inputs, so counterexamples and lines show the mutated values — fixed: each run continues from a Schema round-trip copy of the given model, each message and input; tests show the given line unchanged after a mutating update, its replay reproducing it, and `Story.lines` intact (the defensive copies in older tests are gone).
+- high bug: `Decision.against` skipped validation, invariants, round trips and purity — fixed: one `strict` rule set serves memory and store runs, and the store's `decideIn` takes it as its ruling; a broken given, an evolved invariant, a throwing decide and an invalid state fail against a store.
+- medium bug: a produced value that is not JSON became a defect instead of a `StoryFailure` — fixed: keys are effectful (`keyed`), failing as a `Problem`; each Schema's checks (valid, key, copy, show) come from one `role` per model, message, command, state, input, event and rejection, so Decision's in-memory and store runs share them; a model with a bigint fails a story at its step and an exploration with a counterexample and replay.
+- medium bug: a lossy codec (trim) passed the round trip — fixed: the decoded copy must equal the value by `Schema.toEquivalence`; a trimming model fails with expected and actual.
+- medium bug: exploration reply indexes were capped at 0..7, so a ninth reply was never sent — fixed: any non-negative index (taken modulo the choices), and pending commands are picked in the order produced (the sort by key added nothing deterministic); a ninth reply breaking an invariant is found.
+- medium bug: concurrent tells in one test made the report order nondeterministic — fixed: records sort by file, test, then their JSON; the reporter fixture tells a test's tales in opposite orders across its two runs and the bytes match.
+- medium bug: `StoryRecord` was missing from the root and the README snippet imported a non-existent named export — fixed: `StoryRecord` is a root namespace and the snippet imports it from `effect-storytime`; it typechecks against the built package.
+- medium bug: `pnpm release` ran git and the build without timeouts — fixed: 2 min per git call, 5 min for the build.

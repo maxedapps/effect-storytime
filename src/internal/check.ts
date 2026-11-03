@@ -4,6 +4,7 @@
  */
 import { Data, Effect, Result, Schema } from 'effect';
 import type { Invariants } from '../Program.ts';
+import { canonical, describer } from './canonical.ts';
 
 export class Problem extends Data.Error<{
 	readonly message: string;
@@ -32,18 +33,52 @@ export const conforms = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
 		});
 };
 
-/** Checks that a value survives its JSON encoding, and returns the decoded copy. */
+/**
+ * Gives a value's canonical JSON line, taken each time the Effect runs, so it sees mutations; a
+ * value that is not JSON is a Problem.
+ */
+export const keyed = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
+	const encode = canonical(schema);
+	return (value: A) =>
+		Effect.suspend(() => Effect.fromResult(encode(value))).pipe(
+			Effect.mapError((error) => new Problem({ message: `${what} is not JSON: ${error.message}` }))
+		);
+};
+
+/**
+ * Checks that a value survives its JSON encoding unchanged, and returns the decoded copy, which
+ * callbacks get so that a mutation never reaches the caller's value.
+ */
 export const roundTrips = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
 	const json = Schema.toCodecJson(schema);
 	const encode = Schema.encodeUnknownResult(json);
 	const decode = Schema.decodeUnknownResult(json);
+	const equivalent = Schema.toEquivalence(Schema.toType(schema));
+	const describe = describer(schema);
 	return (value: A) =>
 		Effect.fromResult(Result.flatMap(encode(value), decode)).pipe(
 			Effect.mapError(
 				(error) => new Problem({ message: `${what} does not survive JSON: ${error.message}` })
+			),
+			Effect.filterOrFail(
+				(copy) => equivalent(value, copy),
+				(copy) =>
+					new Problem({
+						message: `${what} changes through JSON`,
+						expected: describe(value),
+						actual: describe(copy)
+					})
 			)
 		);
 };
+
+/** Every check on one Schema's values, naming them `what` in each Problem. */
+export const role = <A>(schema: Schema.Codec<A, unknown>, what: string) => ({
+	valid: conforms(schema, what),
+	key: keyed(schema, what),
+	copy: roundTrips(schema, what),
+	show: describer(schema)
+});
 
 /** Checks every named invariant on a model or state. */
 export const holds =
@@ -67,25 +102,24 @@ export const holds =
  */
 export const pure = Effect.fnUntraced(function* <A>(
 	name: string,
-	input: () => string,
+	input: Effect.Effect<string, Problem>,
 	run: () => A,
 	output: (result: A) => Effect.Effect<string, Problem>
 ) {
-	const before = input();
-	const changed = Effect.suspend(() => {
-		const after = input();
-		return after === before
+	const before = yield* input;
+	const unchanged = Effect.flatMap(input, (after) =>
+		after === before
 			? Effect.void
 			: Effect.fail(
 					new Problem({ message: `${name} changed its input`, expected: before, actual: after })
-				);
-	});
+				)
+	);
 	const first = yield* attempt(name, run);
 	const firstText = yield* output(first);
-	yield* changed;
+	yield* unchanged;
 	const second = yield* attempt(name, run);
 	const secondText = yield* output(second);
-	yield* changed;
+	yield* unchanged;
 	if (firstText !== secondText) {
 		return yield* new Problem({
 			message: `${name} gave two results for the same input`,

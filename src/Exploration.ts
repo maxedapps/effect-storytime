@@ -10,7 +10,6 @@ import {
 	Effect,
 	Match,
 	Option,
-	Order,
 	Predicate,
 	Ref,
 	Schema
@@ -96,7 +95,7 @@ export const lines = <Model, Message extends Tagged, Command extends Tagged>(
 
 type Action<Message> = Data.TaggedEnum<{
 	Send: { readonly message: Message };
-	/** Answers the pending command at `pick`, sorted by key, with its answer at `choice`. */
+	/** Answers the pending command at `pick`, in the order produced, with its answer at `choice`. */
 	Reply: { readonly pick: number; readonly choice: number };
 	// oxlint-disable-next-line typescript/no-empty-object-type -- TaggedEnum spells a case without fields as {}
 	Restart: {};
@@ -113,7 +112,7 @@ interface Path<Model, Message> {
 	readonly actions: ReadonlyArray<Action<Message>>;
 }
 
-const index = Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 7 })));
+const index = Arbitrary.schema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
 
 const paths = <Model, Message extends Tagged, Command extends Tagged>(
 	exploration: Exploration<Model, Message, Command>
@@ -145,8 +144,6 @@ type Move<Model, Message, Command> = readonly [
 	Effect.Effect<State<Model, Command>, Problem>
 ];
 
-const byKey = Order.mapInput(Order.String, (entry: { readonly key: string }) => entry.key);
-
 /** Walks a path, turning each action into a story step, and gives the cases it reached. */
 const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	exploration: Exploration<Model, Message, Command>
@@ -160,7 +157,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 		pick: number,
 		choice: number
 	): Option.Option<Move<Model, Message, Command>> =>
-		Arr.match(Arr.sort(state.pending, byKey), {
+		Arr.match(state.pending, {
 			onEmpty: Option.none,
 			onNonEmpty: (pending) =>
 				Option.flatMap(Arr.get(pending, pick % pending.length), ({ command }) =>

@@ -140,9 +140,9 @@ Every story, explored path and decision is checked at every step:
 
 - every input and every produced model, command and event satisfies its Schema;
 - `update`, `decide` and `evolve` are pure: each runs twice, its input must not change and both results must be equal (a throw fails the step);
-- the model or state round-trips through its Schema's JSON codec;
+- the model or state round-trips through its Schema's JSON codec unchanged, and the run continues from that copy, so a mutating callback never changes the tale's own values;
 - the invariants hold;
-- every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A cancel or restart that drops an owed command fails, and so does a story that ends with one. Inside `anyOrder` a cancel may drop one, since a command only one order produces cannot be named by the shared steps.
+- every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A cancel or restart that drops an owed command fails, and so does a story that ends with one, in every order of an `anyOrder`.
 
 A failure is a `Story.StoryFailure` with the title, the step's number and line, the message and, where they differ, `expected` and `actual` (which Vitest diffs).
 
@@ -167,7 +167,7 @@ A `resolve` or `emit` inside `anyOrder` is skipped when its command was cancelle
 
 ## Loop
 
-A Loop runs a Program in the current scope. One fiber applies messages in order; commands run as fibers keyed by their canonical JSON and only enqueue the messages they answer with.
+A Loop runs a Program in the current scope. One fiber applies messages in order; commands run as fibers keyed by their canonical JSON and only enqueue the messages they answer with. A message from a command that was cancelled or replaced after it was enqueued is dropped.
 
 ```ts
 import { Effect, Stream } from 'effect';
@@ -333,13 +333,12 @@ A tale that failed with another error (such as a database error in `Decision.aga
 Read a report back with its Schema, which rejects other versions:
 
 ```ts
-import { Effect } from 'effect';
-import { FileSystem } from 'effect/FileSystem';
-import { StoryRecord } from 'effect-storytime/StoryRecord';
+import { Effect, FileSystem } from 'effect';
+import { StoryRecord } from 'effect-storytime';
 
-const report = Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString('reports/stories.json')).pipe(
-	Effect.flatMap(StoryRecord.decode)
-);
+export const report = Effect.flatMap(FileSystem.FileSystem, (fs) =>
+	fs.readFileString('reports/stories.json')
+).pipe(Effect.flatMap(StoryRecord.decode));
 ```
 
 ## Development

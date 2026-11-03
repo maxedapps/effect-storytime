@@ -28,10 +28,16 @@ const encoder = <A>(schema: Schema.Codec<A, unknown>) => {
 	return (value: A) => Result.map(encode(value), sorted);
 };
 
+/** Encodes values of `schema` to one canonical JSON line, or why a value is not JSON. */
+export const canonical = <A>(schema: Schema.Codec<A, unknown>) => {
+	const encode = encoder(schema);
+	return (value: A) => Result.map(encode(value), (json) => JSON.stringify(json));
+};
+
 /** Encodes values of `schema` to one canonical JSON line. A value that is not JSON throws. */
 export const stringifier = <A>(schema: Schema.Codec<A, unknown>) => {
-	const encode = encoder(schema);
-	return (value: A): string => JSON.stringify(Result.getOrThrow(encode(value)));
+	const encode = canonical(schema);
+	return (value: A): string => Result.getOrThrow(encode(value));
 };
 
 const tagged = (json: Schema.Json) =>

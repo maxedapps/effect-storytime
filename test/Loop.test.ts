@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Deferred, Effect, Option, Queue, Ref, Stream } from 'effect';
+import { Deferred, Effect, Fiber, Option, Queue, Ref, Stream } from 'effect';
 import { Loop } from '../src/index.ts';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
@@ -29,6 +29,57 @@ const hang = (started: Deferred.Deferred<void>, interrupted: Deferred.Deferred<v
 		Effect.andThen(Effect.never),
 		Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))
 	);
+
+const { Failed, Fetched, Dropped } = Fetch.Message.cases;
+const page = { page: '1' };
+
+/**
+ * A fetch Loop whose fetch answers at once, the first with `Fetched`, later ones with `Dropped`,
+ * recording the messages it applies. Its first retry holds the loop in its save until `racer`
+ * is enqueued behind it.
+ */
+const racing = (racer: Fetch.Message) =>
+	Effect.gen(function* () {
+		const applied: Array<Fetch.Message['_tag']> = [];
+		const holding = yield* Deferred.make<void>();
+		const unblock = yield* Deferred.make<void>();
+		const fetches = yield* Ref.make(0);
+		const loop = yield* Loop.make(
+			{
+				...Fetch.fetch,
+				update: (model: Fetch.Model, message: Fetch.Message) => {
+					applied.push(message._tag);
+					return Fetch.fetch.update(model, message);
+				}
+			},
+			{
+				init: { model: Fetch.start },
+				handler: Fetch.Command.match({
+					Fetch: ({ params }) =>
+						Effect.map(
+							Ref.getAndUpdate(fetches, (n) => n + 1),
+							(n) => (n === 0 ? Fetched.make({ params }) : Dropped.make({ params }))
+						),
+					Note: () => Effect.void
+				}),
+				persist: {
+					load: Effect.succeedNone,
+					save: (model) =>
+						model.attempts === 1
+							? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
+							: Effect.void
+				}
+			}
+		);
+		yield* Effect.forkChild(loop.dispatch(Failed.make({ params: page })));
+		yield* Deferred.await(holding);
+		const raced = yield* Effect.forkChild(loop.dispatch(racer), { startImmediately: true });
+		yield* Deferred.succeed(unblock, undefined);
+		// The replies are enqueued once the racer applied; this lands behind them.
+		yield* Fiber.join(raced);
+		yield* loop.dispatch(Dropped.make({ params: { page: 'other' } }));
+		return { applied, model: yield* loop.model };
+	});
 
 describe('Loop', () => {
 	it.effect('streams an answer into the model and runs the command it leads to', () =>
@@ -258,6 +309,22 @@ describe('Loop', () => {
 			yield* loop.dispatch(Fetch.Message.cases.Requested.make({ params }));
 			expect(yield* Deferred.await(noted)).toBe('retrying');
 			expect(yield* Ref.get(attempts)).toBe(2);
+		})
+	);
+
+	it.effect('drops a reply a command enqueued before it was cancelled', () =>
+		Effect.gen(function* () {
+			const { applied, model } = yield* racing(Dropped.make({ params: page }));
+			expect(applied).toEqual(['Failed', 'Dropped', 'Dropped']);
+			expect(model).toEqual({ attempts: 1, fetched: false });
+		})
+	);
+
+	it.effect('drops a reply a command enqueued before an identical one replaced it', () =>
+		Effect.gen(function* () {
+			const { applied, model } = yield* racing(Failed.make({ params: page }));
+			expect(applied).toEqual(['Failed', 'Failed', 'Dropped', 'Dropped']);
+			expect(model).toEqual({ attempts: 2, fetched: false });
 		})
 	);
 
