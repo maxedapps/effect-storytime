@@ -1,6 +1,16 @@
 {
-	"name": "effect-storytime",
 	"version": "0.1.0",
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"check": "oxfmt --check && oxlint && tsc && vitest run --coverage && stryker run && pnpm build",
+		"format": "oxfmt",
+		"lint": "oxlint",
+		"mutate": "stryker run",
+		"release": "node scripts/release.ts",
+		"test": "vitest run --coverage",
+		"typecheck": "tsc"
+	},
+	"name": "effect-storytime",
 	"private": true,
 	"description": "Effect-native story testing: pure state machines whose side effects are Schema data, told and checked as strict stories.",
 	"files": [
@@ -19,17 +29,6 @@
 		"./StoryRecord": "./dist/StoryRecord.js",
 		"./reporter": "./dist/reporter.js",
 		"./vitest": "./dist/vitest.js"
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
-		"check": "oxfmt --check && oxlint && tsc && vitest run --coverage && stryker run && pnpm build",
-		"format": "oxfmt",
-		"lint": "oxlint",
-		"mutate": "stryker run",
-		"prepare": "effect-tsgo patch --typescript --oxlint",
-		"release": "node scripts/release.ts",
-		"test": "vitest run --coverage",
-		"typecheck": "tsc"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
