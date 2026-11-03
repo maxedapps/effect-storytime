@@ -149,6 +149,33 @@ describe('Exploration', () => {
 		})
 	);
 
+	it.effect('keeps a nested start apart from the model an update mutates', () =>
+		Effect.gen(function* () {
+			const nested = Program.make({
+				Model: Schema.Struct({ nested: Schema.Unknown }),
+				Message: Lamp.Message,
+				Command: Lamp.Command,
+				update: (current) => {
+					Object.assign(Object(current.nested), { count: 1 });
+					return { model: current };
+				}
+			});
+			const start = { nested: { count: 0 } };
+			const mutates = Exploration.make('mutates deep', nested, {
+				given: Arbitrary.Constant(start),
+				send: switches
+			});
+			const failure = yield* Effect.flip(Exploration.check(mutates));
+			expect(failure.message).toBe('update changed its input');
+			expect(failure.counterexample?.[0]).toBe('given {"nested":{"count":0}}');
+			expect(start).toEqual({ nested: { count: 0 } });
+			const replayed = yield* Effect.flip(
+				Exploration.check(mutates, { replay: failure.replay ?? '' })
+			);
+			expect(replayed.counterexample).toEqual(failure.counterexample);
+		})
+	);
+
 	it.effect('answers with any reply, not just the first few', () =>
 		Effect.gen(function* () {
 			const Said = Schema.TaggedUnion({ Asked: {}, Replied: { n: Schema.Int } });

@@ -46,13 +46,13 @@ export const keyed = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
 };
 
 /**
- * Checks that a value survives its JSON encoding unchanged, and returns the decoded copy, which
- * callbacks get so that a mutation never reaches the caller's value.
+ * Checks that a value survives its JSON text unchanged, and returns the copy decoded from that
+ * text, which shares nothing with the value, so a mutation of either never reaches the other.
  */
 export const roundTrips = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
-	const json = Schema.toCodecJson(schema);
-	const encode = Schema.encodeUnknownResult(json);
-	const decode = Schema.decodeUnknownResult(json);
+	const text = Schema.fromJsonString(Schema.toCodecJson(schema));
+	const encode = Schema.encodeUnknownResult(text);
+	const decode = Schema.decodeUnknownResult(text);
 	const equivalent = Schema.toEquivalence(Schema.toType(schema));
 	const describe = describer(schema);
 	return (value: A) =>

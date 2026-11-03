@@ -80,10 +80,10 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 			const key = yield* the.command.key(command);
 			pending = [...pending.filter((entry) => entry.key !== key), { key, command, owed: owing }];
 		}
-		yield* the.model.copy(next.model);
-		yield* invariants(next.model);
+		const model = yield* the.model.copy(next.model);
+		yield* invariants(model);
 		return {
-			model: next.model,
+			model,
 			pending,
 			cancelled,
 			cases: [

@@ -247,3 +247,7 @@ Code review, round 1 (Codex GPT-6.1 Sol, on 4ed1426):
 - medium bug: concurrent tells in one test made the report order nondeterministic — fixed: records sort by file, test, then their JSON; the reporter fixture tells a test's tales in opposite orders across its two runs and the bytes match.
 - medium bug: `StoryRecord` was missing from the root and the README snippet imported a non-existent named export — fixed: `StoryRecord` is a root namespace and the snippet imports it from `effect-storytime`; it typechecks against the built package.
 - medium bug: `pnpm release` ran git and the build without timeouts — fixed: 2 min per git call, 5 min for the build.
+
+Code review, follow-up (Codex GPT-6.1 Sol, on b80c7bf):
+
+- high bug: inputs were not isolated: a `Json`/`Unknown` field survived Schema encode/decode as the same object, and `settle` discarded the decoded model copy — fixed: copies decode from real JSON text (`Schema.fromJsonString`), the machine continues from the produced model's copy, and `Decision` copies decided events and evolved states too; regressions (a nested `Unknown` start an update mutates, a produced model shared with the story, an event and a state a decider shares with the decision) fail with the fix reverted.

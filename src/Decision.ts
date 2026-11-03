@@ -306,7 +306,8 @@ const joined = (parts: ReadonlyArray<Effect.Effect<string, Problem>>) =>
 
 /**
  * The strict rules on a Decider: `check` validates a state and gives its decoded copy, and `rule`
- * runs `decide` and `evolve` twice each on copies, validating what they give.
+ * runs `decide` and `evolve` twice each on copies, validating what they give and continuing from
+ * copies of it, so no callback holds a value the decision names.
  */
 const strict = <State, Input, Event, Rejection>(
 	decider: Decider<State, Input, Event, Rejection>
@@ -351,8 +352,9 @@ const strict = <State, Input, Event, Rejection>(
 				output
 			);
 			if (Result.isFailure(decided)) return { decided, reached: current };
-			const evolved = yield* Effect.reduce(
-				decided.success,
+			const events = yield* Effect.forEach(decided.success, the.event.copy);
+			const reached = yield* Effect.reduce(
+				events,
 				() => current,
 				(from, event) =>
 					pure(
@@ -360,9 +362,10 @@ const strict = <State, Input, Event, Rejection>(
 						joined([the.state.key(from), the.event.key(event)]),
 						() => decider.evolve(from, event),
 						(next) => Effect.andThen(the.state.valid(next), the.state.key(next))
-					)
+					).pipe(Effect.flatMap(the.state.copy))
 			);
-			return { decided, reached: yield* check(evolved) };
+			yield* invariants(reached);
+			return { decided: Result.succeed(events), reached };
 		});
 
 	return { check, rule };

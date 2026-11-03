@@ -366,6 +366,32 @@ describe('Story', () => {
 				})
 		);
 
+		it.effect('an update that mutates a model it shares with the story', () =>
+			Effect.gen(function* () {
+				const shared = { ...Lamp.off, on: true };
+				const sharing = Lamp.variant((lamp, message) => {
+					if (message.by === 1) return { model: shared };
+					Object.assign(lamp, { count: 5 });
+					return { model: lamp };
+				});
+				const story = Story.make(
+					'shares',
+					sharing,
+					given(Lamp.off),
+					send(Lamp.switched(1)),
+					send(Lamp.switched(2)),
+					model(shared)
+				);
+				const before = Story.lines(story);
+				expect(yield* failure(story)).toMatchObject({
+					step: 3,
+					message: 'update changed its input'
+				});
+				expect(Story.lines(story)).toEqual(before);
+				expect(shared).toEqual({ ...Lamp.off, on: true });
+			})
+		);
+
 		it.effect('an update that gives another result for the same input', () =>
 			Effect.gen(function* () {
 				let calls = 0;

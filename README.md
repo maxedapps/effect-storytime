@@ -140,7 +140,7 @@ Every story, explored path and decision is checked at every step:
 
 - every input and every produced model, command and event satisfies its Schema;
 - `update`, `decide` and `evolve` are pure: each runs twice, its input must not change and both results must be equal (a throw fails the step);
-- the model or state round-trips through its Schema's JSON codec unchanged, and the run continues from that copy, so a mutating callback never changes the tale's own values;
+- the model or state, and every message, input and event, round-trips through JSON text by its Schema unchanged, and the run continues from that copy, so a callback that mutates a value it shares with the tale never changes the tale or the run;
 - the invariants hold;
 - every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A cancel or restart that drops an owed command fails, and so does a story that ends with one, in every order of an `anyOrder`.
 

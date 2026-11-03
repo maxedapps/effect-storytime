@@ -11,7 +11,7 @@ import {
 	later,
 	membership,
 	type Event,
-	type Input,
+	Input,
 	type Membership,
 	Memberships,
 	none,
@@ -498,6 +498,53 @@ describe('Decision', () => {
 					message:
 						'the state is invalid: Expected a value with a length of at least 1\n  at ["checkedAt"]'
 				});
+			})
+		);
+
+		it.effect('a decide or evolve that mutates a value it shares with the decision', () =>
+			Effect.gen(function* () {
+				const shared = Granted.make({ source: 'teachable', at });
+				const sharing = Decider.make({
+					...membership,
+					decide: () => Result.succeed([shared]),
+					evolve: (current, event) => {
+						Object.assign(event, { at: later });
+						return membership.evolve(current, event);
+					}
+				});
+				const events = Decision.make('events', sharing, given(none), when(grant), accepted(shared));
+				const before = Decision.lines(events);
+				expect(yield* failure(events)).toMatchObject({
+					step: 2,
+					message: 'evolve changed its input'
+				});
+				expect(Decision.lines(events)).toEqual(before);
+				expect(shared).toEqual(granted);
+				const reached = { ...active };
+				const keeping = Decider.make({
+					...membership,
+					decide: (current, input) => {
+						if (Input.guards.Revoke(input)) Object.assign(current, { checkedAt: later });
+						return membership.decide(current, input);
+					},
+					evolve: () => reached
+				});
+				const states = Decision.make(
+					'states',
+					keeping,
+					given(none),
+					when(grant),
+					accepted(granted),
+					state(reached),
+					when(revoke)
+				);
+				const shown = Decision.lines(states);
+				expect(yield* failure(states)).toMatchObject({
+					step: 5,
+					message: 'decide changed its input'
+				});
+				expect(Decision.lines(states)).toEqual(shown);
+				expect(reached).toEqual(active);
 			})
 		);
 	});
