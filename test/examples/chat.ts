@@ -103,9 +103,13 @@ export const chat = Program.make({
 	Message,
 	Command,
 	update,
+	// The answer streams again from the start, so the partial one is dropped.
 	resume: (model) =>
 		Chat.guards.Asking(model)
-			? { model, commands: [Ask.make({ turn: model.turn, text: model.question })] }
+			? {
+					model: Asking.make({ ...model, answer: '' }),
+					commands: [Ask.make({ turn: model.turn, text: model.question })]
+				}
 			: { model },
 	invariants: {
 		leftIsNeverNegative: (model) => !('left' in model) || model.left >= 0

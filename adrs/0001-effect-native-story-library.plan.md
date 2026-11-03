@@ -76,14 +76,14 @@ Story.make(title, program, ...steps)
 - Steps are tagged data:
   - `given(model)` comes first and appears once.
   - `send(msg)` runs `update`.
-  - `model(expected | predicate)` checks the model.
+  - `model(expected)` requires the model to equal `expected` (by canonical JSON); `satisfies(label, check)` requires a check, shown in lines by its label so lines stay deterministic.
   - `commands(...cmds)` requires the pending set to be exactly these; `commands()` means none.
   - `resolve(cmd, msg?)` takes a pending command away and feeds its message, if any.
   - `emit(cmd, msg)` feeds a message from a pending streaming command, which stays pending.
   - `restart()` round-trips the model through JSON, drops every pending command and applies `resume`.
-  - `anyOrder(...≤5 steps)` runs the rest of the story once per order. A `resolve` or `emit` is skipped only if its command was cancelled earlier in the same order; any other missing command fails as usual.
-- Every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A step that drops an owed command (a cancel, a restart) fails, so no effect leaves the story unasserted.
-  - `steps(...)` groups steps.
+  - `anyOrder(...2–5 steps)` runs the rest of the story once per order; a `steps(...)` group inside it moves as one unit. A `resolve` or `emit` is skipped only if its command was cancelled earlier in the same order; any other missing command fails as usual.
+  - `steps(...)` groups steps, so stories can share a part.
+- Every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A step that drops an owed command (a cancel, a restart) fails, so no effect leaves the story unasserted. Inside `anyOrder` a cancel may drop one: a command only one order produces cannot be named by the shared steps.
 - Steps type-check against the program through contextual inference.
 - `Story.run(story) ⇒ Effect<Outcome, StoryFailure>`. `Outcome` holds the final model and the cases touched.
 - `Story.explore(title, program, { given: Arbitrary<M>, send: Arbitrary<Msg>, replies?, restarts?, runs?, steps?, seed? })` returns an `Exploration`. A generated path checks everything below except command assertions: it asserts no effects, so commands may be pending at its end and none is owed.
@@ -210,3 +210,8 @@ Plan review, round 1 (Codex GPT-6.1 Sol):
 - medium bug: `anyOrder` skips any vanished command, masking a double resolve — fixed: a reply is skipped only when its command was cancelled earlier in the same order; a duplicate completion fails.
 - medium simplification: deep freeze plus comparing live results misses `Date`/`Map` mutation, and throws escape `checkEffect` as defects — fixed: compare canonical JSON of input before/after and of each result right after its run, validate with `Schema.is`, turn throws into `StoryFailure`; a codec model fixture and a `Date` mutation regression.
 - medium bug: the replay token cannot be passed back — fixed: `Story.check(exploration, { replay })` passes `CheckOptions.replay`; a test reproduces the shrunk path from it.
+
+Implementation amendments (to raise at the code review):
+
+- The owed rule meets `anyOrder`: a step after one order's reply cannot name a command that only that order started, so a cancel inside `anyOrder` may drop an owed command; outside it and at a restart the rule stands. Test: a recall in either order with the next step started in one of them.
+- `satisfies` takes a label: a check's source text changes under bundlers and Stryker, which would break the deterministic record.

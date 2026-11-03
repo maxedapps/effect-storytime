@@ -5,7 +5,7 @@
  * apply short.
  */
 import { Deferred, Effect, FiberMap, Option, Queue, Scope, Stream, SubscriptionRef } from 'effect';
-import { encoder } from './internal/canonical.ts';
+import { stringifier } from './internal/canonical.ts';
 import type { Next, Program, Tagged } from './Program.ts';
 
 /**
@@ -56,7 +56,7 @@ export const make = Effect.fnUntraced(function* <
 	options: Options<Model, Message, Command, R>
 ): Effect.fn.Return<Loop<Model, Message>, never, Scope.Scope | R> {
 	const context = yield* Effect.context<R>();
-	const keyOf = encoder(program.Command);
+	const keyOf = stringifier(program.Command);
 	const stored = options.persist ? yield* options.persist.load : Option.none<Model>();
 	const start = Option.match(stored, { onNone: () => options.init, onSome: program.resume });
 	const model = yield* SubscriptionRef.make(start.model);
@@ -82,9 +82,9 @@ export const make = Effect.fnUntraced(function* <
 	const apply = Effect.fnUntraced(function* (next: Next<Model, Command>) {
 		if (options.persist) yield* options.persist.save(next.model);
 		yield* SubscriptionRef.set(model, next.model);
-		for (const command of next.cancels ?? []) yield* FiberMap.remove(fibers, yield* keyOf(command));
+		for (const command of next.cancels ?? []) yield* FiberMap.remove(fibers, keyOf(command));
 		for (const command of next.commands ?? []) {
-			yield* FiberMap.run(fibers, yield* keyOf(command), run(command));
+			yield* FiberMap.run(fibers, keyOf(command), run(command));
 		}
 	}, Effect.provideContext(context));
 
