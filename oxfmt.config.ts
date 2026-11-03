@@ -6,5 +6,13 @@ export default defineConfig({
 	singleQuote: true,
 	trailingComma: 'none',
 	sortPackageJson: true,
-	ignorePatterns: ['**/*.md', 'coverage/**', 'dist/**', 'reports/**', 'tools/oxlint/anti-slop/**']
+	ignorePatterns: [
+		'**/*.md',
+		'coverage/**',
+		'dist/**',
+		'reports/**',
+		// The reporter's exact output, which the reporter test compares byte for byte.
+		'test/fixtures/report.json',
+		'tools/oxlint/anti-slop/**'
+	]
 });

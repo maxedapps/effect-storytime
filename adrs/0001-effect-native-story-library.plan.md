@@ -86,13 +86,23 @@ Story.make(title, program, ...steps)
 - Every produced command is owed an assertion until a `commands`, `resolve` or `emit` step names it. A step that drops an owed command (a cancel, a restart) fails, so no effect leaves the story unasserted. Inside `anyOrder` a cancel may drop one: a command only one order produces cannot be named by the shared steps.
 - Steps type-check against the program through contextual inference.
 - `Story.run(story) ⇒ Effect<Outcome, StoryFailure>`. `Outcome` holds the final model and the cases touched.
-- `Story.explore(title, program, { given: Arbitrary<M>, send: Arbitrary<Msg>, replies?, restarts?, runs?, steps?, seed? })` returns an `Exploration`. A generated path checks everything below except command assertions: it asserts no effects, so commands may be pending at its end and none is owed.
-  - The generated actions are `Send`, `Reply { pick, choice }` and `Restart`.
-  - `replies: { [Tag]?: (cmd) ⇒ ReadonlyArray<Msg> }` lists the messages a pending command may answer with. Indices wrap around, which keeps shrinking simple.
-  - The seed defaults to the title.
-  - `Story.check(exploration, { replay? }) ⇒ Effect<Outcome, StoryFailure>` runs `Arbitrary.checkEffect`. A failure carries the shrunk path as story lines plus the replay token, which `replay` takes back to rerun exactly that path.
-- `Story.covers(program, stories) ⇒ Effect<void, StoryFailure>` requires every Message, Command and (tagged) Model case to be sent, produced or reached.
-- `Story.lines(story | exploration)` renders plain lines from the value alone.
+- `Story.lines(story)` renders plain lines from the value alone.
+
+### Exploration
+
+```ts
+Exploration.make(title, program, { given, send?, replies?, emits?, restarts?, runs?, steps?, seed? })
+```
+
+- A generated path checks everything below except command assertions: it asserts no effects, so commands may be pending at its end and none is owed.
+- The generated actions are `Send`, `Reply { pick, choice }` and `Restart`. `replies(cmd)` lists the messages a pending command completes with (a command with none stays pending), `emits(cmd)` those it streams while pending. Indices wrap around, which keeps shrinking simple.
+- `send` defaults to the Message Schema's Arbitrary; the seed defaults to the title.
+- `Exploration.check(exploration, { replay? }) ⇒ Effect<Explored, StoryFailure>` runs `Arbitrary.checkEffect`. A failure carries the shrunk path as story lines plus the replay token, which `replay` takes back to rerun exactly that path.
+- `Exploration.lines(exploration)` is one line naming its runs, steps and seed.
+
+### Tale
+
+A tale is a story, exploration or decision. `Tale.lines`, `Tale.run` and `Tale.cases` take any of them. `Tale.covers(program, tales)` requires every Message, Command and (tagged) Model case to be sent, produced or reached, and fails with `Tale.Uncovered { missing }`.
 
 ### Decision
 
@@ -132,12 +142,12 @@ The Schemas `StoryRecord` and `StoryReport`. A report is `{ version: 1, stories 
 
 Each record holds:
 
-- `kind`: `story`, `decision` or `exploration`;
+- `kind`: the tale's `_tag`, `Story`, `Exploration` or `Decision`;
 - `title`, `file` (posix, relative to the Vitest root) and `test` (Vitest's full name);
 - `lines`;
 - `status`: `passed` or `failed`;
 - `final`: the final model or state as one JSON line;
-- `failure`: `{ step, message, counterexample, replay }`;
+- `failure`, for a `StoryFailure` only: `{ step, line, message, expected?, actual?, counterexample?, replay? }`; another error records just the status;
 - `cases`: the tags touched.
 
 Records are sorted by file, then test, and carry no timings or absolute paths.
@@ -146,8 +156,8 @@ Records are sorted by file, then test, and carry no timings or absolute paths.
 
 - `effect-storytime/vitest`:
   - `stories(...tales)` registers one `it.effect` per tale, named by its title.
-  - `covers(program, stories)` registers one test.
-  - `tell(ctx, tale, run?)` runs any tale (also `Decision.against` inside a `layer(...)`), puts its record into `ctx.task.meta.storytime` and fails the test on a `StoryFailure`.
+  - `covers(program, tales)` registers one test.
+  - `tell(ctx, tale, run?)` runs any tale (also `Decision.against` inside a `layer(...)`), appends its record to `ctx.task.meta.storytime` (a test may tell several tales) and fails the test on a `StoryFailure`.
 - `effect-storytime/reporter`: a Vitest reporter that writes the `StoryReport` to `outputFile` (default `stories.json`) in `onTestRunEnd`.
 
 ## Tasks
@@ -177,10 +187,10 @@ Records are sorted by file, then test, and carry no timings or absolute paths.
    - a throwing `update` that is found and shrunk too;
    - a Program whose path ends with a command in flight passes;
    - `covers` naming the missing cases.
-7. **StoryRecord, the Vitest adapter and the reporter**. Tested by running Vitest programmatically (`startVitest` from `vitest/node`) on fixture story files in two projects, with a passing and a failing story and a failing exploration, then decoding the written report (repository-relative paths, diagnostics, replay token) and checking it stays byte-identical across two runs.
+7. **StoryRecord, the Vitest adapter and the reporter**. Tested by running Vitest in-process (`createVitest` from `vitest/node`, with the reporter instance) on fixture story files in two projects, with a passing and a failing story and a failing exploration, then decoding the written report (repository-relative paths, diagnostics, replay token) and checking it stays byte-identical across two runs and matches a file snapshot.
 8. **README** (concepts, examples for each step, Loop, Decider, explore, Vitest, the record format, consuming via a git tag) and **AGENTS.md** with the gate and landing (create-skill), plus a `CLAUDE.md` symlink.
 9. **Release**:
-   - `pnpm release 0.1.0`: a script that builds, commits `dist/` on a detached commit on top of main, tags `v0.1.0` and pushes the tag.
+   - Bump `version` to 0.1.0 on main, then `pnpm release`: a script that builds and tags the version in `package.json` on a detached commit on top of main that adds `dist/` and drops `prepare`, then pushes the tag.
    - Verify the tag from scratch: in `~/tmp`, run `pnpm add github:maxedapps/effect-storytime#v0.1.0` and import every entry point in a Node script and a Vitest file.
    - Give infinite's GitHub account (maxschwarzmueller) read access if it lacks it, and confirm the repo is still private.
 
@@ -219,3 +229,9 @@ Implementation amendments (to raise at the code review):
 - Explorations are their own module: `Exploration.make(title, program, { given, send?, replies?, emits?, restarts?, runs?, steps?, seed? })`, `Exploration.check(exploration, { replay? }) ⇒ Effect<Explored, StoryFailure>` and `Exploration.lines`. Inside `Story` they would make `Story` and `Exploration` import each other. `send` defaults to the Message Schema's Arbitrary; `replies` and `emits` are functions of the command, since a tag map adds nothing a `guards` check doesn't. A failure's `line` is the exploration's own line and `step` numbers the counterexample line that failed.
 - Story and explored paths share one set of step rules (`internal/machine.ts`); explored paths owe no command.
 - `covers` lives in a `Tale` module with `Tale.lines`, `Tale.run` and `Tale.cases`: a tale is a story, exploration or decision, implementing one symbol-keyed method, so records and the adapter take tales of any Program or Decider without `any`. Missing cases fail with `Tale.Uncovered { missing }`. Outcomes carry `final`, the final model or state as a line, for the record.
+- The record's `kind` is the tale's `_tag` (`Story`, `Exploration`, `Decision`), so no second naming exists.
+- Exploration `replies`: a command with no reply stays pending; there is no resolve without a message, since a streaming command's completion is a reply like any other.
+- The reporter is tested in-process with `createVitest` and the reporter instance (not `startVitest`, which takes reporter names), plus a file snapshot of the report.
+- A failure record holds `StoryFailure` details only; any other error (a store failing in `Decision.against`) records only `status: "failed"`, since its shape is unknown.
+- `ctx.task.meta.storytime` is an array: a test may tell several tales.
+- `pnpm release` reads the version from `package.json` instead of an argument, so the tag cannot disagree with the manifest, and its release commit drops `prepare` (an `effect-tsgo` patch for development), so a git install runs no script.
