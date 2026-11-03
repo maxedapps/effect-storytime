@@ -33,7 +33,7 @@ export default defineConfig({
 		'.stryker-tmp/**'
 	],
 	rules: {
-		'no-underscore-dangle': 'error',
+		'no-underscore-dangle': ['error', { allow: ['_tag'] }],
 		eqeqeq: 'error',
 		'no-debugger': 'error',
 		'no-eval': 'error',

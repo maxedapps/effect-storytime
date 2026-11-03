@@ -1,1 +1,2 @@
-export const placeholder = (n: number): number => n + 1;
+export * as Loop from './Loop.ts';
+export * as Program from './Program.ts';
