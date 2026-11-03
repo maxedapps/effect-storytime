@@ -2,14 +2,14 @@ catalogMode: strict
 catalog:
   '@effect/tsgo': 0.64.1
   '@effect/vitest': 4.1.2
-  '@oxlint/plugins': 1.91.0
+  '@oxlint/plugins': 1.90.0
   '@stryker-mutator/core': 10.1.1
   '@stryker-mutator/vitest-runner': 10.1.1
   '@types/node': 26.6.6
   '@vitest/coverage-v8': 5.1.0
   effect: 4.1.2
   oxfmt: 0.76.0
-  oxlint: 1.91.0
+  oxlint: 1.90.0
   oxlint-tsgolint: 7.0.2005
   typescript: 7.0.2
   vitest: 5.1.0
@@ -41,25 +41,4 @@ minimumReleaseAgeExclude:
   - '@oxfmt/binding-win32-arm64-msvc@0.76.0'
   - '@oxfmt/binding-win32-ia32-msvc@0.76.0'
   - '@oxfmt/binding-win32-x64-msvc@0.76.0'
-  - '@oxlint/binding-android-arm-eabi@1.91.0'
-  - '@oxlint/binding-android-arm64@1.91.0'
-  - '@oxlint/binding-darwin-arm64@1.91.0'
-  - '@oxlint/binding-darwin-x64@1.91.0'
-  - '@oxlint/binding-freebsd-x64@1.91.0'
-  - '@oxlint/binding-linux-arm-gnueabihf@1.91.0'
-  - '@oxlint/binding-linux-arm-musleabihf@1.91.0'
-  - '@oxlint/binding-linux-arm64-gnu@1.91.0'
-  - '@oxlint/binding-linux-arm64-musl@1.91.0'
-  - '@oxlint/binding-linux-ppc64-gnu@1.91.0'
-  - '@oxlint/binding-linux-riscv64-gnu@1.91.0'
-  - '@oxlint/binding-linux-riscv64-musl@1.91.0'
-  - '@oxlint/binding-linux-s390x-gnu@1.91.0'
-  - '@oxlint/binding-linux-x64-gnu@1.91.0'
-  - '@oxlint/binding-linux-x64-musl@1.91.0'
-  - '@oxlint/binding-openharmony-arm64@1.91.0'
-  - '@oxlint/binding-win32-arm64-msvc@1.91.0'
-  - '@oxlint/binding-win32-ia32-msvc@1.91.0'
-  - '@oxlint/binding-win32-x64-msvc@1.91.0'
-  - '@oxlint/plugins@1.91.0'
   - oxfmt@0.76.0
-  - oxlint@1.91.0
