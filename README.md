@@ -11,11 +11,15 @@ It needs `effect` 4.1.2 or newer and, for the adapter and reporter, `vitest` 5.1
 
 ## Install
 
-```sh
-pnpm add effect-storytime effect
-# for the Vitest adapter and the reporter
-pnpm add -D vitest @effect/vitest
+Install it from its git tag, which carries the built `dist/`, so installing runs no build. Pin it in your pnpm catalog:
+
+```yaml
+# pnpm-workspace.yaml
+catalog:
+  effect-storytime: github:maxedapps/effect-storytime#v0.1.0
 ```
+
+Add `effect` beside it and, for the Vitest adapter and the reporter, `vitest` and `@effect/vitest`.
 
 Every module is a namespace of the index and also a subpath:
 
