@@ -19,7 +19,12 @@
 		"target": "ES2024",
 		"types": ["node"],
 		"verbatimModuleSyntax": true,
-		"plugins": [{ "name": "@effect/language-service", "allowedUnstableApis": ["@effect/vitest"] }]
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"allowedUnstableApis": ["@effect/vitest", "effect/Arbitrary"]
+			}
+		]
 	},
 	"include": ["src", "test", "scripts", "*.config.ts"]
 }

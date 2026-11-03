@@ -48,6 +48,10 @@ const lifecycle = Decision.make(
 );
 
 const inactive: Membership = { source: 'teachable', active: false, checkedAt: later };
+const reachedInactive = {
+	state: inactive,
+	final: '{"active":0,"checkedAt":"2026-11-04T00:00:00.000Z","source":"teachable"}'
+};
 
 const failure = (decision: Decision.Decision<Membership, Input, Event, Rejection>) =>
 	Effect.flip(Decision.run(decision));
@@ -85,13 +89,13 @@ describe('Decision', () => {
 
 	it.effect('runs a decision in memory and returns its final state', () =>
 		Effect.gen(function* () {
-			expect(yield* Decision.run(lifecycle)).toEqual({ state: inactive });
+			expect(yield* Decision.run(lifecycle)).toEqual(reachedInactive);
 		})
 	);
 
 	it.effect('runs the same decision through handle on a real store', () =>
 		Effect.gen(function* () {
-			expect(yield* Decision.against(lifecycle, Memberships, 'u1')).toEqual({ state: inactive });
+			expect(yield* Decision.against(lifecycle, Memberships, 'u1')).toEqual(reachedInactive);
 			expect(yield* (yield* Memberships).log).toEqual([
 				'begin',
 				'save u1',

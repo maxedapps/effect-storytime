@@ -100,8 +100,8 @@ Story.make(title, program, ...steps)
 Decision.make(title, decider, ...steps)
 ```
 
-- The steps are `given(state)`, `when(input)`, `then(...events)` (exact and ordered; `then()` means none), `rejected(r)` and `state(expected | predicate)`.
-- Every `when` must be followed by a `then` or `rejected`.
+- The steps are `given(state)` (first and once), `when(input)`, `accepted(...events)` (exact and ordered; `accepted()` means none), `rejected(r)`, `state(expected)` and `satisfies(label, check)`.
+- Every `when` is followed right away by an `accepted` or `rejected`.
 - `Decision.run(d) ⇒ Effect<Outcome, StoryFailure>`.
 - `Decision.against(d, StoreTag, key) ⇒ Effect<Outcome, StoryFailure | E, Id>` runs the same steps through `handle` on a real Store: it seeds `given` with `save` and checks `state` with `load`.
 - `Decision.lines(d)` renders plain lines.
@@ -215,3 +215,7 @@ Implementation amendments (to raise at the code review):
 
 - The owed rule meets `anyOrder`: a step after one order's reply cannot name a command that only that order started, so a cancel inside `anyOrder` may drop an owed command; outside it and at a restart the rule stands. Test: a recall in either order with the next step started in one of them.
 - `satisfies` takes a label: a check's source text changes under bundlers and Stryker, which would break the deterministic record.
+- Decision's `then` is `accepted`: a module exporting `then` is a thenable namespace, so `await import('effect-storytime/Decision')` would call it. `state(predicate)` became `satisfies(label, check)`, as in Story, so lines stay deterministic.
+- Explorations are their own module: `Exploration.make(title, program, { given, send?, replies?, emits?, restarts?, runs?, steps?, seed? })`, `Exploration.check(exploration, { replay? }) ⇒ Effect<Explored, StoryFailure>` and `Exploration.lines`. Inside `Story` they would make `Story` and `Exploration` import each other. `send` defaults to the Message Schema's Arbitrary; `replies` and `emits` are functions of the command, since a tag map adds nothing a `guards` check doesn't. A failure's `line` is the exploration's own line and `step` numbers the counterexample line that failed.
+- Story and explored paths share one set of step rules (`internal/machine.ts`); explored paths owe no command.
+- `covers` lives in a `Tale` module with `Tale.lines`, `Tale.run` and `Tale.cases`: a tale is a story, exploration or decision, implementing one symbol-keyed method, so records and the adapter take tales of any Program or Decider without `any`. Missing cases fail with `Tale.Uncovered { missing }`. Outcomes carry `final`, the final model or state as a line, for the record.

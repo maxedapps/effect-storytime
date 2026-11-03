@@ -3,9 +3,13 @@
  * for every command it asks for. Running it checks each step and the strict rules in between.
  */
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect';
-import { describer, stringifier, tagger } from './internal/canonical.ts';
-import { attempt, conforms, holds, Problem, pure, roundTrips } from './internal/check.ts';
-import type { Next, Program, Tagged } from './Program.ts';
+import { describer } from './internal/canonical.ts';
+import { Problem } from './internal/check.ts';
+import { machine } from './internal/machine.ts';
+import type { State } from './internal/machine.ts';
+import { TypeId } from './internal/tale.ts';
+import type { Told } from './internal/tale.ts';
+import type { Program, Tagged } from './Program.ts';
 
 export type Step<Model, Message, Command> = Data.TaggedEnum<{
 	Given: { readonly model: Model };
@@ -96,7 +100,11 @@ export class Story<Model, Message extends Tagged, Command extends Tagged> extend
 	readonly title: string;
 	readonly program: Program<Model, Message, Command>;
 	readonly steps: Steps<Model, Message, Command>;
-}> {}
+}> {
+	[TypeId](): Told {
+		return { lines: lines(this), run: run(this) };
+	}
+}
 
 export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	title: string,
@@ -116,11 +124,13 @@ export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailu
 	replay: Schema.optional(Schema.String)
 }) {}
 
-/** What a passing story reached: its final model and the cases it sent, produced or reached. */
-const tagOf = (value: Tagged) => value._tag;
-
+/**
+ * What a passing story reached: its final model, also as a line, and the cases it sent, produced
+ * or reached.
+ */
 export interface Outcome<Model> {
 	readonly model: Model;
+	readonly final: string;
 	readonly cases: ReadonlyArray<string>;
 }
 
@@ -212,20 +222,6 @@ const permutations = <A>(items: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<Rea
 			)
 	});
 
-interface Pending<Command> {
-	readonly key: string;
-	readonly command: Command;
-	readonly owed: boolean;
-}
-
-interface State<Model, Command> {
-	readonly model: Model;
-	readonly pending: ReadonlyArray<Pending<Command>>;
-	/** Keys cancelled since the enclosing `anyOrder` began; none outside one. */
-	readonly cancelled: Option.Option<ReadonlyArray<string>>;
-	readonly cases: ReadonlyArray<string>;
-}
-
 /** Runs a story: every step and every strict rule, once per order of each `anyOrder`. */
 export const run = Effect.fnUntraced(function* <
 	Model,
@@ -235,19 +231,7 @@ export const run = Effect.fnUntraced(function* <
 	const { program, title } = story;
 	const entries = layout(program, story.steps);
 	const all = flatten(entries);
-	const showModel = describer(program.Model);
-	const showCommand = describer(program.Command);
-	const modelKey = stringifier(program.Model);
-	const commandKey = stringifier(program.Command);
-	const messageKey = stringifier(program.Message);
-	const validModel = conforms(program.Model, 'the model');
-	const validMessage = conforms(program.Message, 'the message');
-	const validCommand = conforms(program.Command, 'the command');
-	const durable = roundTrips(program.Model, 'the model');
-	const invariants = holds(program.invariants, showModel);
-	const modelTag = tagger(program.Model);
-	const modelCase = (value: Model) =>
-		Option.match(modelTag(value), { onNone: () => [], onSome: (tag) => [`Model.${tag}`] });
+	const rules = machine(program, true);
 
 	const fail =
 		(entry: { readonly no: number; readonly line: string }, order: string) => (problem: Problem) =>
@@ -259,86 +243,6 @@ export const run = Effect.fnUntraced(function* <
 				expected: problem.expected,
 				actual: problem.actual
 			});
-
-	const pendingLines = (pending: ReadonlyArray<Pending<Command>>) =>
-		pending
-			.map((entry) => showCommand(entry.command))
-			.toSorted()
-			.join('\n');
-
-	const output = (next: Next<Model, Command>) =>
-		Effect.gen(function* () {
-			yield* validModel(next.model);
-			yield* Effect.forEach(next.commands ?? [], validCommand);
-			yield* Effect.forEach(next.cancels ?? [], validCommand);
-			return JSON.stringify({
-				model: modelKey(next.model),
-				commands: (next.commands ?? []).map(commandKey),
-				cancels: (next.cancels ?? []).map(commandKey)
-			});
-		});
-
-	const settle = Effect.fnUntraced(function* (
-		state: State<Model, Command>,
-		next: Next<Model, Command>
-	) {
-		let pending = state.pending;
-		let cancelled = state.cancelled;
-		for (const command of next.cancels ?? []) {
-			const key = commandKey(command);
-			const found = pending.find((entry) => entry.key === key);
-			// Inside anyOrder a command one order produced can't be asserted by the shared steps.
-			if (found?.owed && Option.isNone(cancelled)) {
-				return yield* new Problem({
-					message: `${showCommand(command)} was cancelled before any step asserted it`
-				});
-			}
-			pending = pending.filter((entry) => entry.key !== key);
-			cancelled = Option.map(cancelled, (keys) => [...keys, key]);
-		}
-		for (const command of next.commands ?? []) {
-			const key = commandKey(command);
-			pending = [...pending.filter((entry) => entry.key !== key), { key, command, owed: true }];
-		}
-		yield* durable(next.model);
-		yield* invariants(next.model);
-		return {
-			model: next.model,
-			pending,
-			cancelled,
-			cases: [
-				...state.cases,
-				...modelCase(next.model),
-				...(next.commands ?? []).map((command) => `Command.${tagOf(command)}`)
-			]
-		};
-	});
-
-	const deliver = Effect.fnUntraced(function* (state: State<Model, Command>, message: Message) {
-		yield* validMessage(message);
-		const next = yield* pure(
-			'update',
-			() => modelKey(state.model) + messageKey(message),
-			() => program.update(state.model, message),
-			output
-		);
-		return yield* settle({ ...state, cases: [...state.cases, `Message.${tagOf(message)}`] }, next);
-	});
-
-	const take = (state: State<Model, Command>, command: Command) => {
-		const key = commandKey(command);
-		return Effect.gen(function* () {
-			yield* validCommand(command);
-			const found = state.pending.find((entry) => entry.key === key);
-			if (found) return Option.some(key);
-			if (Option.exists(state.cancelled, (keys) => keys.includes(key))) return Option.none();
-			return yield* new Problem({
-				message: `${showCommand(command)} is not pending`,
-				expected: showCommand(command),
-				actual: pendingLines(state.pending)
-			});
-		});
-	};
 
 	const end = { no: all.length + 1, line: 'end' };
 
@@ -353,7 +257,7 @@ export const run = Effect.fnUntraced(function* <
 					)(
 						new Problem({
 							message: `the story ended with ${owed.length} unasserted command(s)`,
-							actual: pendingLines(owed)
+							actual: rules.pendingLines(owed)
 						})
 					)
 				);
@@ -378,108 +282,13 @@ export const run = Effect.fnUntraced(function* <
 				head === first
 					? go(state, rest, order)
 					: then(Effect.fail(new Problem({ message: 'given(model) comes once, first' }))),
-			Send: ({ message }) => then(deliver(state, message)),
-			Model: ({ expected }) =>
-				then(
-					Effect.gen(function* () {
-						yield* validModel(expected);
-						if (modelKey(expected) !== modelKey(state.model)) {
-							return yield* new Problem({
-								message: 'the model differs',
-								expected: showModel(expected),
-								actual: showModel(state.model)
-							});
-						}
-						return state;
-					})
-				),
-			Satisfies: ({ label, check }) =>
-				then(
-					Effect.flatMap(
-						attempt(label, () => check(state.model)),
-						(ok) =>
-							ok
-								? Effect.succeed(state)
-								: Effect.fail(
-										new Problem({
-											message: `the model does not satisfy ${label}`,
-											actual: showModel(state.model)
-										})
-									)
-					)
-				),
-			Commands: ({ commands: expected }) =>
-				then(
-					Effect.gen(function* () {
-						yield* Effect.forEach(expected, validCommand);
-						const wanted = expected.map(commandKey).toSorted();
-						const actual = state.pending.map((entry) => entry.key).toSorted();
-						if (wanted.join('\n') !== actual.join('\n')) {
-							return yield* new Problem({
-								message: 'the pending commands differ',
-								expected: expected.map(showCommand).toSorted().join('\n'),
-								actual: pendingLines(state.pending)
-							});
-						}
-						return { ...state, pending: state.pending.map((entry) => ({ ...entry, owed: false })) };
-					})
-				),
-			Resolve: ({ command, reply }) =>
-				then(
-					Effect.flatMap(take(state, command), (key) =>
-						Option.match(key, {
-							onNone: () => Effect.succeed(state),
-							onSome: (done) => {
-								const remaining = {
-									...state,
-									pending: state.pending.filter((entry) => entry.key !== done)
-								};
-								return Option.match(reply, {
-									onNone: () => Effect.succeed(remaining),
-									onSome: (message) => deliver(remaining, message)
-								});
-							}
-						})
-					)
-				),
-			Emit: ({ command, message }) =>
-				then(
-					Effect.flatMap(take(state, command), (key) =>
-						Option.match(key, {
-							onNone: () => Effect.succeed(state),
-							onSome: (running) =>
-								deliver(
-									{
-										...state,
-										pending: state.pending.map((entry) =>
-											entry.key === running ? { ...entry, owed: false } : entry
-										)
-									},
-									message
-								)
-						})
-					)
-				),
-			Restart: () =>
-				then(
-					Effect.gen(function* () {
-						const owed = state.pending.filter((entry) => entry.owed);
-						if (owed.length > 0) {
-							return yield* new Problem({
-								message: 'the restart drops commands no step asserted',
-								actual: pendingLines(owed)
-							});
-						}
-						const stored = yield* durable(state.model);
-						const next = yield* pure(
-							'resume',
-							() => modelKey(stored),
-							() => program.resume(stored),
-							output
-						);
-						return yield* settle({ ...state, model: stored, pending: [] }, next);
-					})
-				),
+			Send: ({ message }) => then(rules.send(state, message)),
+			Model: ({ expected }) => then(rules.model(state, expected)),
+			Satisfies: ({ label, check }) => then(rules.satisfies(state, label, check)),
+			Commands: ({ commands: expected }) => then(rules.commands(state, expected)),
+			Resolve: ({ command, reply }) => then(rules.resolve(state, command, reply)),
+			Emit: ({ command, message }) => then(rules.emit(state, command, message)),
+			Restart: () => then(rules.restart(state)),
 			AnyOrder: () =>
 				Effect.map(
 					Effect.forEach(permutations(head.children), (units) =>
@@ -514,17 +323,11 @@ export const run = Effect.fnUntraced(function* <
 	if (crowded) {
 		return yield* fail(crowded, '')(new Problem({ message: 'anyOrder takes 2 to 5 steps' }));
 	}
-	const start = first.step.model;
-	yield* Effect.all([validModel(start), durable(start), invariants(start)]).pipe(
-		Effect.mapError(fail(first, ''))
-	);
-	const finals = yield* go(
-		{ model: start, pending: [], cancelled: Option.none(), cases: modelCase(start) },
-		entries,
-		''
-	);
+	const initial = yield* Effect.mapError(rules.start(first.step.model), fail(first, ''));
+	const finals = yield* go(initial, entries, '');
 	return {
 		model: finals[0].model,
+		final: describer(program.Model)(finals[0].model),
 		cases: Arr.dedupe(finals.flatMap((final) => final.cases)).toSorted()
 	};
 });

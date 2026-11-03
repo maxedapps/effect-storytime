@@ -7,6 +7,8 @@ import { Data, Effect, Option, Ref, Result } from 'effect';
 import type { Context } from 'effect';
 import type { Decider, Store } from './Decider.ts';
 import { describer, stringifier } from './internal/canonical.ts';
+import { TypeId } from './internal/tale.ts';
+import type { Told } from './internal/tale.ts';
 import { attempt, conforms, holds, Problem, pure, roundTrips } from './internal/check.ts';
 import { decideIn, loadOrInitial } from './internal/store.ts';
 import { StoryFailure } from './Story.ts';
@@ -61,7 +63,11 @@ export class Decision<State, Input, Event, Rejection> extends Data.TaggedClass('
 	readonly title: string;
 	readonly decider: Decider<State, Input, Event, Rejection>;
 	readonly steps: ReadonlyArray<Step<State, Input, Event, Rejection>>;
-}> {}
+}> {
+	[TypeId](): Told {
+		return { lines: lines(this), run: run(this) };
+	}
+}
 
 export const make = <State, Input, Event, Rejection>(
 	title: string,
@@ -69,9 +75,10 @@ export const make = <State, Input, Event, Rejection>(
 	...body: ReadonlyArray<Step<State, Input, Event, Rejection>>
 ): Decision<State, Input, Event, Rejection> => new Decision({ title, decider, steps: body });
 
-/** What a passing decision reached. */
+/** What a passing decision reached: its final state, also as a line. */
 export interface Outcome<State> {
 	readonly state: State;
+	readonly final: string;
 }
 
 const liner = <State, Input, Event, Rejection>(
@@ -274,7 +281,8 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 			new Problem({ message: unanswered })
 		);
 	}
-	return { state: yield* backend.current };
+	const reached = yield* backend.current;
+	return { state: reached, final: showState(reached) };
 });
 
 /** Keeps the state in memory and checks every strict rule on `decide` and `evolve`. */

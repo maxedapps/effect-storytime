@@ -11,9 +11,11 @@
 		".": "./dist/index.js",
 		"./Decider": "./dist/Decider.js",
 		"./Decision": "./dist/Decision.js",
+		"./Exploration": "./dist/Exploration.js",
 		"./Loop": "./dist/Loop.js",
 		"./Program": "./dist/Program.js",
 		"./Story": "./dist/Story.js",
+		"./Tale": "./dist/Tale.js",
 		"./StoryRecord": "./dist/StoryRecord.js",
 		"./reporter": "./dist/reporter.js",
 		"./vitest": "./dist/vitest.js"

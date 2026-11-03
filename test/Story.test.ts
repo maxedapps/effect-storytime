@@ -55,6 +55,9 @@ describe('Story', () => {
 		Effect.gen(function* () {
 			const outcome = yield* Story.run(answers);
 			expect(outcome.model).toEqual(Chat.cases.Ready.make({ turns: [turn], left: 1 }));
+			expect(outcome.final).toBe(
+				'Ready {"left":1,"turns":[{"answer":"Typed errors.","id":"t1","question":"Why Effect?"}]}'
+			);
 			expect(outcome.cases).toEqual([
 				'Command.Ask',
 				'Command.SaveTurn',
