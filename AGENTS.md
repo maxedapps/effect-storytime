@@ -23,4 +23,4 @@ Rebase on `main`, run the gate, then fast-forward `main` and push it.
 
 ## Release
 
-Consumers pin a tag (`github:maxedapps/effect-storytime#vX.Y.Z`). To release, bump `version` in `package.json` on `main` in its own commit (0.x: a breaking change bumps the minor), push it, then run `pnpm release` from a clean `main`. It tags a commit on top of `main` that adds the built `dist/` and drops `prepare`, and pushes only the tag.
+Releases go to npm as `effect-storytime`. Bump `version` in `package.json` on `main` in its own commit (0.x: a breaking change bumps the minor), push it, then tag that commit `vX.Y.Z` and push the tag: `.github/workflows/publish.yml` runs `pnpm check` and publishes with provenance, using the `NPM_TOKEN` repository secret (from the `effect-storytime` prod vault).

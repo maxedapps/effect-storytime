@@ -1,12 +1,31 @@
 {
 	"name": "effect-storytime",
 	"version": "0.1.0",
-	"private": true,
 	"description": "Effect-native story testing: pure state machines whose side effects are Schema data, told and checked as strict stories.",
+	"keywords": [
+		"effect",
+		"effect-ts",
+		"property-based-testing",
+		"schema",
+		"state-machine",
+		"stories",
+		"testing",
+		"vitest"
+	],
+	"homepage": "https://github.com/maxedapps/effect-storytime#readme",
+	"bugs": "https://github.com/maxedapps/effect-storytime/issues",
+	"license": "MIT",
+	"author": "Maximilian Schwarzmüller",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/maxedapps/effect-storytime.git"
+	},
 	"files": [
-		"dist"
+		"dist",
+		"src"
 	],
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": "./dist/index.js",
 		"./Decider": "./dist/Decider.js",
@@ -27,7 +46,6 @@
 		"lint": "oxlint",
 		"mutate": "stryker run",
 		"prepare": "effect-tsgo patch --typescript --oxlint",
-		"release": "node scripts/release.ts",
 		"test": "vitest run --coverage",
 		"typecheck": "tsc"
 	},
@@ -58,5 +76,9 @@
 		"vitest": {
 			"optional": true
 		}
-	}
+	},
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"packageManager": "pnpm@12.15.0"
 }

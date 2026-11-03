@@ -19,14 +19,14 @@ The 2294 design assumed a helper inside infinite: synchronous, throwing stories,
 2. **Strict by construction**, inside every run: exact command sets (by canonical JSON), every produced command asserted before anything drops it and none owed at the end, `resolve` and `emit` only of pending commands, the model round-trips through its Schema after every step, `update` and `decide` run twice, leave their input's JSON unchanged and must agree, invariants after every step, given values and produced values must satisfy their Schemas. Generated paths skip only the command assertions.
 3. **Vitest is optional**: `effect-storytime/vitest` registers stories as `@effect/vitest` tests (`stories(...)`, `covers(...)`) and attaches each record to the test's `meta`; `effect-storytime/reporter` is a Vitest reporter that writes them, sorted, to one JSON file (`version: 1`). Without the adapter, any `it.effect` can run `Story.run`.
 4. **Gates in `pnpm check`**: oxfmt, oxlint (type-aware, Effect presets, vendored anti-slop), `tsc` (TypeScript 7) with the Effect language service, Vitest with 100% v8 coverage of `src`, Stryker with a break threshold of 100 (equivalent mutants disabled inline with a reason), and the build.
-5. **Consumption**: `effect` (and optionally `vitest`, `@effect/vitest`) are peers. Releases are git tags `v0.x.y` whose commit adds the built `dist/` on top of main; infinite pins `github:maxedapps/effect-storytime#v0.1.0`.
+5. **Consumption**: `effect` (and optionally `vitest`, `@effect/vitest`) are peers. The repository is public and releases are published to npm as `effect-storytime` by a GitHub Actions workflow on a `vX.Y.Z` tag, with provenance; infinite pins the exact version. (Amended 2026-11-03, when Max made the repository public: 0.1.0 was a git tag whose commit carried the built `dist/`.)
 
 ## Alternatives
 
 - **Synchronous throwing stories (the 2294 design).** Simplest, runner-agnostic. Rejected: Max asked for Effect-returning runners, and typed `StoryFailure`s compose with `Decision.against`, `explore` and `covers`, which are Effects anyway.
 - **Commands with attached `execute` (Foldkit).** Rejected: effects in the domain, and tests would see them.
 - **infinite's in-house mutation check, or none.** A copy of ADR 0504's 336 lines would be a second thing to maintain; Stryker's Vitest runner gives the same "no survivor" rule with a break threshold of 100.
-- **Consumption by a registry** (GitHub Packages) needs a `read:packages` token on every machine; **a vendored tarball** in infinite needs a copy per release; **a git dependency on source** fails because Node won't strip types under `node_modules`. Tags carrying `dist/` need nothing but the Git access agents already have.
+- **Consumption by a registry** (GitHub Packages) needs a `read:packages` token on every machine; **a vendored tarball** in infinite needs a copy per release; **a git dependency on source** fails because Node won't strip types under `node_modules`. While the repository was private, tags carrying `dist/` needed nothing but the Git access agents already had; once public, npm needs no access at all and gives consumers provenance.
 - **Event-sourced Decider storage.** Left to the app: `Store.save` gets the events and may keep them.
 
 ## Consequences

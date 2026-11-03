@@ -26,5 +26,5 @@
 			}
 		]
 	},
-	"include": ["src", "test", "scripts", "*.config.ts"]
+	"include": ["src", "test", "*.config.ts"]
 }

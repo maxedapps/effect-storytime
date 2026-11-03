@@ -11,15 +11,11 @@ It needs `effect` 4.1.2 or newer and, for the adapter and reporter, `vitest` 5.1
 
 ## Install
 
-Releases are git tags whose commit carries the built `dist/`, so installing one runs no build. Pin a tag in your pnpm catalog:
-
-```yaml
-# pnpm-workspace.yaml
-catalog:
-  effect-storytime: github:maxedapps/effect-storytime#v0.1.0
+```sh
+pnpm add effect-storytime effect
+# for the Vitest adapter and the reporter
+pnpm add -D vitest @effect/vitest
 ```
-
-The repository is private: the machine (or CI) that installs it needs read access to `maxedapps/effect-storytime` over git.
 
 Every module is a namespace of the index and also a subpath:
 
@@ -344,3 +340,7 @@ export const report = Effect.flatMap(FileSystem.FileSystem, (fs) =>
 ## Development
 
 `pnpm check` is the gate: formatting, lint, types, tests at 100% coverage, a 100% mutation score with Stryker and the build. AGENTS.md has the rest.
+
+## License
+
+MIT
