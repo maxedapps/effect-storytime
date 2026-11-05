@@ -50,7 +50,16 @@ const lifecycle = Decision.make(
 const inactive: Membership = { source: 'teachable', active: false, checkedAt: later };
 const reachedInactive = {
 	state: inactive,
-	final: '{"active":0,"checkedAt":"2026-11-04T00:00:00.000Z","source":"teachable"}'
+	final: '{"active":0,"checkedAt":"2026-11-04T00:00:00.000Z","source":"teachable"}',
+	cases: [
+		'Event.Checked',
+		'Event.Granted',
+		'Input.Check',
+		'Input.Grant',
+		'Input.Revoke',
+		'Rejection.AlreadyActive',
+		'Rejection.NotActive'
+	]
 };
 
 const failure = (decision: Decision.Decision<Membership, Input, Event, Rejection>) =>

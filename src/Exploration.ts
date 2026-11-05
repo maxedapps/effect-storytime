@@ -1,7 +1,8 @@
 /**
- * An exploration generates stories instead of telling one: random paths of messages, command
- * answers and restarts through a Program, each checked with every strict rule a story runs except
- * command assertions. A failing path shrinks to a short story, its counterexample.
+ * An exploration generates tales instead of telling one: random paths of messages, command answers
+ * and restarts through a Program, or of inputs through a Decider, each checked with every strict
+ * rule a story or decision runs except command assertions. A failing path shrinks to a short tale,
+ * its counterexample.
  */
 import {
 	Arbitrary,
@@ -14,15 +15,28 @@ import {
 	Ref,
 	Schema
 } from 'effect';
+import type { Decider } from './Decider.ts';
+import * as Decision from './Decision.ts';
+import { Broken } from './internal/check.ts';
 import type { Problem } from './internal/check.ts';
+import { caser, strict } from './internal/decider.ts';
 import { machine } from './internal/machine.ts';
-import type { State } from './internal/machine.ts';
+import type { State as Running } from './internal/machine.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import type { Program, Tagged } from './Program.ts';
 import * as Story from './Story.ts';
 
-export interface Options<Model, Message, Command> {
+interface Settings {
+	/** How many paths to check; 100 by default. */
+	readonly runs?: number;
+	/** The most actions a path takes; 30 by default. */
+	readonly steps?: number;
+	/** The seed paths come from; the title by default, so every run checks the same paths. */
+	readonly seed?: string | number;
+}
+
+export interface Options<Model, Message, Command> extends Settings {
 	/** The models a path starts from. */
 	readonly given: Arbitrary.Arbitrary<Model>;
 	/** The messages a path sends; by default any the Message Schema allows. */
@@ -33,65 +47,86 @@ export interface Options<Model, Message, Command> {
 	readonly emits?: (command: Command) => ReadonlyArray<Message>;
 	/** Whether paths restart; by default they do. */
 	readonly restarts?: boolean;
-	/** How many paths to check; 100 by default. */
-	readonly runs?: number;
-	/** The most actions a path takes; 30 by default. */
-	readonly steps?: number;
-	/** The seed paths come from; the title by default, so every run checks the same paths. */
-	readonly seed?: string | number;
 }
 
-export class Exploration<
-	Model,
-	Message extends Tagged,
-	Command extends Tagged
-> extends Data.TaggedClass('Exploration')<{
+export interface DecisionOptions<State, Input> extends Settings {
+	/** The states a path starts from; the Decider's `initial` by default. */
+	readonly given?: Arbitrary.Arbitrary<State>;
+	/** The inputs a path decides; by default any the Input Schema allows. */
+	readonly when?: Arbitrary.Arbitrary<Input>;
+}
+
+/** One generated path, walked: the cases it touched, or where it broke a rule. */
+type Walk = Effect.Effect<ReadonlyArray<string>, Broken>;
+
+export class Exploration extends Data.TaggedClass('Exploration')<{
 	readonly title: string;
-	readonly program: Program<Model, Message, Command>;
-	readonly given: Arbitrary.Arbitrary<Model>;
-	readonly send: Arbitrary.Arbitrary<Message>;
-	readonly replies: (command: Command) => ReadonlyArray<Message>;
-	readonly emits: (command: Command) => ReadonlyArray<Message>;
-	readonly restarts: boolean;
 	readonly runs: number;
 	readonly steps: number;
 	readonly seed: string | number;
+	readonly restarts: boolean;
+	readonly walks: Arbitrary.Arbitrary<Walk>;
 }> {
 	[TypeId](): Told {
 		return { lines: lines(this), run: check(this) };
 	}
 }
 
+const settled = (title: string, settings: Settings) => ({
+	runs: settings.runs ?? 100,
+	steps: settings.steps ?? 30,
+	seed: settings.seed ?? title
+});
+
 const nothing = () => [];
 
+/** Explores a Program: paths of sent messages, command answers and restarts from a given model. */
 export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	title: string,
 	program: Program<Model, Message, Command>,
 	options: Options<NoInfer<Model>, NoInfer<Message>, NoInfer<Command>>
-): Exploration<Model, Message, Command> =>
+): Exploration => {
+	const restarts = options.restarts ?? true;
+	return new Exploration({
+		title,
+		...settled(title, options),
+		restarts,
+		walks: Arbitrary.map(
+			paths(
+				options.given,
+				// Derived only when needed, since not every Message Schema has an Arbitrary.
+				options.send ?? Arbitrary.schema(program.Message),
+				restarts
+			),
+			walker(title, program, options.replies ?? nothing, options.emits ?? nothing)
+		)
+	});
+};
+
+/** Explores a Decider: paths of inputs decided one after another from a given state. */
+export const decisions = <State, Input, Event, Rejection>(
+	title: string,
+	decider: Decider<State, Input, Event, Rejection>,
+	options: DecisionOptions<NoInfer<State>, NoInfer<Input>> = {}
+): Exploration =>
 	new Exploration({
 		title,
-		program,
-		replies: nothing,
-		emits: nothing,
-		restarts: true,
-		runs: 100,
-		steps: 30,
-		seed: title,
-		...options,
-		// Derived only when needed, since not every Message Schema has an Arbitrary.
-		send: options.send ?? Arbitrary.schema(program.Message)
+		...settled(title, options),
+		restarts: false,
+		walks: Arbitrary.map(
+			Arbitrary.all({
+				start: options.given ?? Arbitrary.Constant(decider.initial),
+				inputs: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Input))
+			}),
+			deciderWalker(title, decider)
+		)
 	});
 
-const summary = <Model, Message extends Tagged, Command extends Tagged>(
-	exploration: Exploration<Model, Message, Command>
-) =>
+const summary = (exploration: Exploration) =>
 	`explore ${exploration.runs} runs of up to ${exploration.steps} steps, seed ${JSON.stringify(exploration.seed)}${exploration.restarts ? ', with restarts' : ''}`;
 
-/** Renders an exploration as its one line; a failure's counterexample is a story's lines. */
-export const lines = <Model, Message extends Tagged, Command extends Tagged>(
-	exploration: Exploration<Model, Message, Command>
-): ReadonlyArray<string> => [summary(exploration)];
+/** Renders an exploration as its one line; a failure's counterexample is a tale's lines. */
+export const lines = (exploration: Exploration): ReadonlyArray<string> => [summary(exploration)];
 
 type Action<Message> = Data.TaggedEnum<{
 	Send: { readonly message: Message };
@@ -114,46 +149,41 @@ interface Path<Model, Message> {
 
 const index = Arbitrary.schema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
 
-const paths = <Model, Message extends Tagged, Command extends Tagged>(
-	exploration: Exploration<Model, Message, Command>
+const paths = <Model, Message>(
+	given: Arbitrary.Arbitrary<Model>,
+	send: Arbitrary.Arbitrary<Message>,
+	restarts: boolean
 ): Arbitrary.Arbitrary<Path<Model, Message>> => {
-	const kinds = Schema.Literals(
-		exploration.restarts ? ['Send', 'Reply', 'Restart'] : ['Send', 'Reply']
-	);
+	const kinds = Schema.Literals(restarts ? ['Send', 'Reply', 'Restart'] : ['Send', 'Reply']);
 	const action = Arbitrary.flatMap(
 		Arbitrary.schema(kinds),
 		(kind): Arbitrary.Arbitrary<Action<Message>> =>
 			({
-				Send: Arbitrary.map(exploration.send, (message) => Action.Send({ message })),
+				Send: Arbitrary.map(send, (message) => Action.Send({ message })),
 				Reply: Arbitrary.map(Arbitrary.all({ pick: index, choice: index }), Action.Reply),
 				Restart: Arbitrary.Constant(Action.Restart())
 			})[kind]
 	);
-	return Arbitrary.all({ start: exploration.given, actions: Arbitrary.array(action) });
+	return Arbitrary.all({ start: given, actions: Arbitrary.array(action) });
 };
-
-/** Where a path broke a rule, before the check knows the replay that reproduces it. */
-class Broken extends Data.Error<{
-	readonly step: number;
-	readonly problem: Problem;
-	readonly counterexample: ReadonlyArray<string>;
-}> {}
 
 type Move<Model, Message, Command> = readonly [
 	Story.Step<Model, Message, Command>,
-	Effect.Effect<State<Model, Command>, Problem>
+	Effect.Effect<Running<Model, Command>, Problem>
 ];
 
-/** Walks a path, turning each action into a story step, and gives the cases it reached. */
+/** Walks a Program's path, turning each action into a story step, and gives the cases it reached. */
 const walker = <Model, Message extends Tagged, Command extends Tagged>(
-	exploration: Exploration<Model, Message, Command>
+	title: string,
+	program: Program<Model, Message, Command>,
+	replies: (command: Command) => ReadonlyArray<Message>,
+	emits: (command: Command) => ReadonlyArray<Message>
 ) => {
-	const { title, program } = exploration;
 	const rules = machine(program, false);
 
 	/** Answers the pending command at `pick` with its reply or stream message at `choice`. */
 	const reply = (
-		state: State<Model, Command>,
+		state: Running<Model, Command>,
 		pick: number,
 		choice: number
 	): Option.Option<Move<Model, Message, Command>> =>
@@ -163,18 +193,14 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 				Option.flatMap(Arr.get(pending, pick % pending.length), ({ command }) =>
 					Arr.match(
 						[
-							...exploration
-								.replies(command)
-								.map((message): Move<Model, Message, Command> => [
-									Story.resolve(command, message),
-									rules.resolve(state, command, Option.some(message))
-								]),
-							...exploration
-								.emits(command)
-								.map((message): Move<Model, Message, Command> => [
-									Story.emit(command, message),
-									rules.emit(state, command, message)
-								])
+							...replies(command).map((message): Move<Model, Message, Command> => [
+								Story.resolve(command, message),
+								rules.resolve(state, command, Option.some(message))
+							]),
+							...emits(command).map((message): Move<Model, Message, Command> => [
+								Story.emit(command, message),
+								rules.emit(state, command, message)
+							])
 						],
 						{
 							onEmpty: Option.none,
@@ -186,11 +212,11 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 
 	const moved = (
 		step: Story.Step<Model, Message, Command>,
-		effect: Effect.Effect<State<Model, Command>, Problem>
+		effect: Effect.Effect<Running<Model, Command>, Problem>
 	): Option.Option<Move<Model, Message, Command>> => Option.some([step, effect]);
 
 	const move = (
-		state: State<Model, Command>,
+		state: Running<Model, Command>,
 		action: Action<Message>
 	): Option.Option<Move<Model, Message, Command>> =>
 		Action.$match(action, {
@@ -199,7 +225,9 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 			Restart: () => moved(Story.restart(), rules.restart(state))
 		});
 
-	return Effect.fnUntraced(function* (path: Path<Model, Message>) {
+	return Effect.fnUntraced(function* (
+		path: Path<Model, Message>
+	): Effect.fn.Return<ReadonlyArray<string>, Broken> {
 		const told: Array<Story.Step<Model, Message, Command>> = [Story.given(path.start)];
 		const broken = (problem: Problem) =>
 			new Broken({
@@ -220,6 +248,36 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	});
 };
 
+/** Walks a Decider's path, turning each input into a `when`, and gives the cases it touched. */
+const deciderWalker = <State, Input, Event, Rejection>(
+	title: string,
+	decider: Decider<State, Input, Event, Rejection>
+) => {
+	const rules = strict(decider);
+	const touch = caser(decider);
+	return Effect.fnUntraced(function* (path: {
+		readonly start: State;
+		readonly inputs: ReadonlyArray<Input>;
+	}): Effect.fn.Return<ReadonlyArray<string>, Broken> {
+		const told: Array<Decision.Step<State, Input, Event, Rejection>> = [Decision.given(path.start)];
+		const broken = (problem: Problem) =>
+			new Broken({
+				step: told.length,
+				problem,
+				counterexample: Decision.lines(Decision.make(title, decider, ...told))
+			});
+		let state = yield* Effect.mapError(rules.check(path.start), broken);
+		const cases = [...touch.state(state)];
+		for (const input of path.inputs) {
+			told.push(Decision.when(input));
+			const ruled = yield* Effect.mapError(rules.rule(state, input), broken);
+			cases.push(...touch.ruled(input, ruled));
+			state = ruled.reached;
+		}
+		return cases;
+	});
+};
+
 /** What a passing exploration checked: its runs and every case its paths sent, produced or reached. */
 export interface Explored {
 	readonly runs: number;
@@ -231,21 +289,16 @@ export interface Explored {
  * counterexample, with `step` numbering the line that failed, and a `replay` token that checks
  * just that path again.
  */
-export const check = Effect.fnUntraced(function* <
-	Model,
-	Message extends Tagged,
-	Command extends Tagged
->(
-	exploration: Exploration<Model, Message, Command>,
+export const check = Effect.fnUntraced(function* (
+	exploration: Exploration,
 	options?: { readonly replay?: Arbitrary.Replay }
 ): Effect.fn.Return<Explored, Story.StoryFailure> {
 	const { title } = exploration;
-	const walk = walker(exploration);
 	const seen = yield* Ref.make<ReadonlyArray<string>>([]);
 	const result = yield* Arbitrary.checkEffect(
-		paths(exploration),
-		(path) =>
-			walk(path).pipe(
+		exploration.walks,
+		(walk) =>
+			walk.pipe(
 				Effect.flatMap((cases) => Ref.update(seen, (all) => Arr.dedupe([...all, ...cases]))),
 				Effect.as(true)
 			),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Arbitrary, Effect } from 'effect';
-import { Decision, Exploration, Story, Tale } from '../src/index.ts';
+import { Arbitrary, Effect, Result, Schema } from 'effect';
+import { Decider, Decision, Exploration, Story, Tale } from '../src/index.ts';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import { membership, none, NotActive, Revoke } from './examples/membership.ts';
@@ -28,6 +28,24 @@ const switches = Exploration.make('the lamp switches', Lamp.lamp, {
 	runs: 3,
 	steps: 5
 });
+
+const Door = Schema.TaggedUnion({ Open: {}, Closed: {} });
+const Push = Schema.TaggedUnion({ Push: {} });
+const Swung = Schema.TaggedUnion({ Swung: {} });
+const Stuck = Schema.TaggedUnion({ Stuck: {} });
+
+const door = Decider.make({
+	State: Door,
+	Input: Push,
+	Event: Swung,
+	Rejection: Stuck,
+	initial: Door.cases.Closed.make({}),
+	decide: () => Result.succeed([Swung.cases.Swung.make({})]),
+	evolve: (current) =>
+		Door.guards.Open(current) ? Door.cases.Closed.make({}) : Door.cases.Open.make({})
+});
+
+const swings = Exploration.decisions('the door swings', door, { runs: 5 });
 
 const revokes = Decision.make(
 	'only an active membership is revoked',
@@ -65,6 +83,52 @@ describe('Tale', () => {
 		]);
 		expect(Tale.cases(Lamp.lamp)).toEqual(['Message.Switched', 'Command.Log']);
 	});
+
+	it('lists every case of a Decider, States only for a tagged union', () => {
+		expect(Tale.cases(membership)).toEqual([
+			'Input.Grant',
+			'Input.Check',
+			'Input.Revoke',
+			'Event.Granted',
+			'Event.Checked',
+			'Event.Revoked',
+			'Rejection.AlreadyActive',
+			'Rejection.NotActive',
+			'Rejection.Manual'
+		]);
+		expect(Tale.cases(door)).toEqual([
+			'State.Open',
+			'State.Closed',
+			'Input.Push',
+			'Event.Swung',
+			'Rejection.Stuck'
+		]);
+	});
+
+	it.effect("passes when a Decider's decisions and explorations touch every case together", () =>
+		Tale.covers(membership, [revokes, Exploration.decisions('memberships', membership)])
+	);
+
+	it.effect('names the cases of a Decider no tale touches', () =>
+		Effect.gen(function* () {
+			expect(yield* Effect.flip(Tale.covers(door, [swings]))).toEqual(
+				new Tale.Uncovered({ missing: ['Rejection.Stuck'] })
+			);
+			expect(yield* Effect.flip(Tale.covers(membership, [revokes]))).toEqual(
+				new Tale.Uncovered({
+					missing: [
+						'Input.Grant',
+						'Input.Check',
+						'Event.Granted',
+						'Event.Checked',
+						'Event.Revoked',
+						'Rejection.AlreadyActive',
+						'Rejection.Manual'
+					]
+				})
+			);
+		})
+	);
 
 	it.effect('passes when the tales touch every case together', () =>
 		Effect.gen(function* () {

@@ -33,7 +33,11 @@
 				"rejected NotActive"
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"cases": [
+				"Input.Revoke",
+				"Rejection.NotActive"
+			]
 		},
 		{
 			"kind": "Decision",
@@ -44,7 +48,8 @@
 				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"cases": []
 		},
 		{
 			"kind": "Decision",
@@ -69,7 +74,11 @@
 				"rejected NotActive"
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"cases": [
+				"Input.Revoke",
+				"Rejection.NotActive"
+			]
 		},
 		{
 			"kind": "Story",

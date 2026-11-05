@@ -12,6 +12,13 @@ export class Problem extends Data.Error<{
 	readonly actual?: string;
 }> {}
 
+/** Where an explored path broke a rule, before the check knows the replay that reproduces it. */
+export class Broken extends Data.Error<{
+	readonly step: number;
+	readonly problem: Problem;
+	readonly counterexample: ReadonlyArray<string>;
+}> {}
+
 /** Runs a user callback; a throw becomes a Problem naming it. */
 export const attempt = <A>(name: string, run: () => A) =>
 	Effect.try({

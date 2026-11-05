@@ -32,8 +32,8 @@ export const rule =
 		});
 
 /**
- * Loads, rules and saves (only when there are events) in one transaction of `store`. `ruling`
- * is `rule` for `handle` and the strictly checked one for `Decision.against`.
+ * Loads, rules and saves (only when there are events) in one transaction of `store`, giving the
+ * ruling. `ruling` is `rule` for `handle` and the strictly checked one for `Decision.against`.
  */
 export const decideIn =
 	<State, Input, Event, Rejection, Key, E, X>(
@@ -41,16 +41,14 @@ export const decideIn =
 		store: Store<Key, State, Event, E>,
 		ruling: (state: State, input: Input) => Effect.Effect<Ruling<State, Event, Rejection>, X>
 	) =>
-	(key: Key, input: Input): Effect.Effect<Result.Result<ReadonlyArray<Event>, Rejection>, E | X> =>
+	(key: Key, input: Input): Effect.Effect<Ruling<State, Event, Rejection>, E | X> =>
 		store.transaction(
 			Effect.gen(function* () {
-				const { decided, reached } = yield* ruling(
-					yield* loadOrInitial(decider, store, key),
-					input
-				);
+				const ruled = yield* ruling(yield* loadOrInitial(decider, store, key), input);
+				const { decided, reached } = ruled;
 				if (Result.isSuccess(decided) && decided.success.length > 0) {
 					yield* store.save(key, reached, decided.success);
 				}
-				return decided;
+				return ruled;
 			})
 		);

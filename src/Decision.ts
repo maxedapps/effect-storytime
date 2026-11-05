@@ -3,15 +3,17 @@
  * events or the rejection each one gives. `run` checks it in memory with the strict rules,
  * `against` through `handle`'s transaction on a real Store.
  */
-import { Data, Effect, Option, Ref, Result } from 'effect';
+import { Array as Arr, Data, Effect, Option, Ref, Result } from 'effect';
 import type { Context } from 'effect';
 import type { Decider, Store } from './Decider.ts';
 import { describer } from './internal/canonical.ts';
-import { TypeId } from './internal/tale.ts';
-import type { Told } from './internal/tale.ts';
-import { attempt, holds, Problem, pure, role } from './internal/check.ts';
+import { attempt, Problem } from './internal/check.ts';
+import { caser, checks, strict } from './internal/decider.ts';
+import type { Decided } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from './internal/store.ts';
 import type { Ruling } from './internal/store.ts';
+import { TypeId } from './internal/tale.ts';
+import type { Told } from './internal/tale.ts';
 import { StoryFailure } from './Story.ts';
 
 export type Step<State, Input, Event, Rejection> = Data.TaggedEnum<{
@@ -76,10 +78,11 @@ export const make = <State, Input, Event, Rejection>(
 	...body: ReadonlyArray<Step<State, Input, Event, Rejection>>
 ): Decision<State, Input, Event, Rejection> => new Decision({ title, decider, steps: body });
 
-/** What a passing decision reached: its final state, also as a line. */
+/** What a passing decision reached: its final state, also as a line, and the cases it touched. */
 export interface Outcome<State> {
 	readonly state: State;
 	readonly final: string;
+	readonly cases: ReadonlyArray<string>;
 }
 
 const liner = <State, Input, Event, Rejection>(
@@ -106,26 +109,14 @@ export const lines = <State, Input, Event, Rejection>(
 	decision: Decision<State, Input, Event, Rejection>
 ): ReadonlyArray<string> => decision.steps.map(liner(decision.decider));
 
-type Decided<Event, Rejection> = Result.Result<ReadonlyArray<Event>, Rejection>;
-
 /** Where a decision's state lives, in memory or in a Store, checked by the strict rules either way. */
 interface Backend<State, Input, Event, Rejection, E> {
 	readonly seed: (state: State) => Effect.Effect<void, Problem | E>;
-	readonly decide: (input: Input) => Effect.Effect<Decided<Event, Rejection>, Problem | E>;
+	readonly decide: (input: Input) => Effect.Effect<Ruling<State, Event, Rejection>, Problem | E>;
 	readonly current: Effect.Effect<State, Problem | E>;
 }
 
 const isProblem = (error: unknown): error is Problem => error instanceof Problem;
-
-/** The checks on a Decider's Schemas. */
-const checks = <State, Input, Event, Rejection>(
-	decider: Decider<State, Input, Event, Rejection>
-) => ({
-	state: role(decider.State, 'the state'),
-	input: role(decider.Input, 'the input'),
-	event: role(decider.Event, 'the event'),
-	rejection: role(decider.Rejection, 'the rejection')
-});
 
 const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 	decision: Decision<State, Input, Event, Rejection>,
@@ -134,6 +125,9 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 	const { decider, title } = decision;
 	const line = liner(decider);
 	const the = checks(decider);
+	const touch = caser(decider);
+	const touched = yield* Ref.make<ReadonlyArray<string>>([]);
+	const note = (cases: ReadonlyArray<string>) => Ref.update(touched, (all) => [...all, ...cases]);
 	const eventsKey = (events: ReadonlyArray<Event>) =>
 		Effect.map(Effect.forEach(events, the.event.key), JSON.stringify);
 	const eventLines = (events: ReadonlyArray<Event>) => events.map(the.event.show).join('\n');
@@ -172,10 +166,15 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 			: Step.$match(next, {
 					Given: ({ state: start }) =>
 						index === 0
-							? Effect.as(backend.seed(start), Option.none())
+							? Effect.as(
+									Effect.andThen(backend.seed(start), note(touch.state(start))),
+									Option.none()
+								)
 							: Effect.fail(new Problem({ message: 'given(state) comes once, first' })),
 					When: ({ input }) =>
-						Effect.asSome(Effect.andThen(the.input.valid(input), backend.decide(input))),
+						Effect.flatMap(backend.decide(input), (ruled) =>
+							Effect.as(note(touch.ruled(input, ruled)), Option.some(ruled.decided))
+						),
 					Accepted: ({ events }) =>
 						answer(decided, 'accepted', (result) =>
 							Effect.andThen(
@@ -298,78 +297,12 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 		return yield* fail(end)(new Problem({ message: unanswered }));
 	}
 	const reached = yield* backend.current.pipe(at(end));
-	return { state: reached, final: the.state.show(reached) };
+	return {
+		state: reached,
+		final: the.state.show(reached),
+		cases: Arr.dedupe(yield* Ref.get(touched)).toSorted()
+	};
 });
-
-const joined = (parts: ReadonlyArray<Effect.Effect<string, Problem>>) =>
-	Effect.map(Effect.all(parts), JSON.stringify);
-
-/**
- * The strict rules on a Decider: `check` validates a state and gives its decoded copy, and `rule`
- * runs `decide` and `evolve` twice each on copies, validating what they give and continuing from
- * copies of it, so no callback holds a value the decision names.
- */
-const strict = <State, Input, Event, Rejection>(
-	decider: Decider<State, Input, Event, Rejection>
-) => {
-	const the = checks(decider);
-	const invariants = holds(decider.invariants, the.state.show);
-	const check = (current: State) =>
-		Effect.gen(function* () {
-			yield* the.state.valid(current);
-			const copy = yield* the.state.copy(current);
-			yield* invariants(copy);
-			return copy;
-		});
-
-	const output = (decided: Decided<Event, Rejection>) =>
-		Result.match(decided, {
-			onSuccess: (events) =>
-				Effect.andThen(
-					Effect.forEach(events, the.event.valid),
-					Effect.map(
-						Effect.forEach(events, the.event.key),
-						(keys) => `accepted ${JSON.stringify(keys)}`
-					)
-				),
-			onFailure: (rejection) =>
-				Effect.andThen(
-					the.rejection.valid(rejection),
-					Effect.map(the.rejection.key(rejection), (key) => `rejected ${key}`)
-				)
-		});
-
-	const rule = (
-		current: State,
-		input: Input
-	): Effect.Effect<Ruling<State, Event, Rejection>, Problem> =>
-		Effect.gen(function* () {
-			const copy = yield* the.input.copy(input);
-			const decided = yield* pure(
-				'decide',
-				joined([the.state.key(current), the.input.key(copy)]),
-				() => decider.decide(current, copy),
-				output
-			);
-			if (Result.isFailure(decided)) return { decided, reached: current };
-			const events = yield* Effect.forEach(decided.success, the.event.copy);
-			const reached = yield* Effect.reduce(
-				events,
-				() => current,
-				(from, event) =>
-					pure(
-						'evolve',
-						joined([the.state.key(from), the.event.key(event)]),
-						() => decider.evolve(from, event),
-						(next) => Effect.andThen(the.state.valid(next), the.state.key(next))
-					).pipe(Effect.flatMap(the.state.copy))
-			);
-			yield* invariants(reached);
-			return { decided: Result.succeed(events), reached };
-		});
-
-	return { check, rule };
-};
 
 /** Keeps the state in memory. */
 const memory = Effect.fnUntraced(function* <State, Input, Event, Rejection>(
@@ -380,11 +313,10 @@ const memory = Effect.fnUntraced(function* <State, Input, Event, Rejection>(
 	const backend: Backend<State, Input, Event, Rejection, never> = {
 		seed: (start) => Effect.flatMap(rules.check(start), (copy) => Ref.set(stored, copy)),
 		decide: (input) =>
-			Effect.gen(function* () {
-				const { decided, reached } = yield* rules.rule(yield* Ref.get(stored), input);
-				yield* Ref.set(stored, reached);
-				return decided;
-			}),
+			Effect.tap(
+				Effect.flatMap(Ref.get(stored), (current) => rules.rule(current, input)),
+				({ reached }) => Ref.set(stored, reached)
+			),
 		current: Ref.get(stored)
 	};
 	return backend;

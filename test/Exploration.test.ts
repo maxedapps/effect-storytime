@@ -1,8 +1,9 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Arbitrary, Effect, Schema } from 'effect';
-import { Exploration, Program, Story } from '../src/index.ts';
+import { Arbitrary, Effect, Result, Schema } from 'effect';
+import { Decider, Exploration, Program, Story } from '../src/index.ts';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
+import { at, Grant, Input, membership, Revoke, variant } from './examples/membership.ts';
 
 const { Asked, Delta, Answered, Refused, Stopped } = Message.cases;
 
@@ -318,6 +319,115 @@ describe('Exploration', () => {
 					'Model.SignedOut'
 				]
 			});
+		})
+	);
+
+	it.effect('decides any input the Input Schema allows from the initial state by default', () =>
+		Effect.gen(function* () {
+			const explored = Exploration.decisions('memberships', membership);
+			expect(Exploration.lines(explored)).toEqual([
+				'explore 100 runs of up to 30 steps, seed "memberships"'
+			]);
+			expect(yield* Exploration.check(explored)).toEqual({
+				runs: 100,
+				cases: [
+					'Event.Checked',
+					'Event.Granted',
+					'Event.Revoked',
+					'Input.Check',
+					'Input.Grant',
+					'Input.Revoke',
+					'Rejection.AlreadyActive',
+					'Rejection.Manual',
+					'Rejection.NotActive'
+				]
+			});
+		})
+	);
+
+	it.effect('starts from the given states and decides the given inputs', () =>
+		Effect.gen(function* () {
+			const revokes = Exploration.decisions('revokes', membership, {
+				given: Arbitrary.Constant({ source: 'teachable', active: true, checkedAt: at }),
+				when: Arbitrary.Constant(Revoke.make({})),
+				runs: 3,
+				steps: 5,
+				seed: 2
+			});
+			expect(yield* Exploration.check(revokes)).toEqual({
+				runs: 3,
+				cases: ['Event.Revoked', 'Input.Revoke', 'Rejection.NotActive']
+			});
+		})
+	);
+
+	it.effect('shrinks a throwing decide to the shortest decision that throws', () =>
+		Effect.gen(function* () {
+			const throwing = variant((current, input) => {
+				if (current.active && Input.guards.Revoke(input)) throw new Error('revoked');
+				return membership.decide(current, input);
+			});
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.decisions('throws', throwing, {
+						when: Arbitrary.map(Arbitrary.schema(Schema.Boolean), (grants) =>
+							grants ? Grant.make({ source: 'teachable', at }) : Revoke.make({})
+						)
+					})
+				)
+			);
+			expect(failure).toEqual(
+				new Story.StoryFailure({
+					title: 'throws',
+					step: 3,
+					line: 'explore 100 runs of up to 30 steps, seed "throws"',
+					message: 'decide threw: Error: revoked',
+					expected: undefined,
+					actual: undefined,
+					counterexample: [
+						'given {"active":0,"checkedAt":null,"source":"teachable"}',
+						'when Grant {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}',
+						'when Revoke'
+					],
+					replay: failure.replay ?? ''
+				})
+			);
+		})
+	);
+
+	it.effect('touches the case of a start state that decides nothing', () =>
+		Effect.gen(function* () {
+			const Door = Schema.TaggedUnion({ Open: {}, Closed: {} });
+			const Push = Schema.TaggedUnion({ Push: {} });
+			const door = Decider.make({
+				State: Door,
+				Input: Push,
+				Event: Push,
+				Rejection: Push,
+				initial: Door.cases.Closed.make({}),
+				decide: () => Result.succeed([]),
+				evolve: (current) => current
+			});
+			expect(
+				yield* Exploration.check(Exploration.decisions('a door', door, { runs: 3, steps: 0 }))
+			).toEqual({ runs: 3, cases: ['State.Closed'] });
+		})
+	);
+
+	it.effect('fails a given state that breaks an invariant at its first line', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.decisions('unchecked', membership, {
+						given: Arbitrary.Constant({ source: 'teachable', active: true, checkedAt: null })
+					})
+				)
+			);
+			expect(failure.step).toBe(1);
+			expect(failure.message).toBe('invariant checkedWhenActive does not hold');
+			expect(failure.counterexample).toEqual([
+				'given {"active":1,"checkedAt":null,"source":"teachable"}'
+			]);
 		})
 	);
 });

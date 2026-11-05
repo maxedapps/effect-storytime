@@ -23,6 +23,6 @@ Rebase on `main`, run the gate, then fast-forward `main` and push it.
 
 ## Release
 
-Releases go to npm as `effect-storytime`. Bump `version` in `package.json` on `main` in its own commit (0.x: a breaking change bumps the minor), push it, then tag that commit `vX.Y.Z` and push the tag: `.github/workflows/publish.yml` runs `pnpm check` and publishes with provenance, using the `NPM_TOKEN` repository secret (from the `effect-storytime` prod vault).
+Bump `version` in `package.json` on `main` in its own commit (0.x: a breaking change bumps the minor) and push it. On top of it, make the release commit outside `main`: `pnpm build`, `git add -f dist`, remove the `prepare` script (a git install would run it without dev dependencies), commit `Release vX.Y.Z`, tag it `vX.Y.Z` and push only the tag. Consumers pin `github:maxedapps/effect-storytime#vX.Y.Z`; README's Install names the newest tag.
 
-npm publishing waits for that token: until the secret exists, push no version tag (the publish would fail). Consumers pin the git tag `github:maxedapps/effect-storytime#v0.1.0`, whose commit carries the built `dist/`.
+npm publishing (as `effect-storytime`) waits for the `NPM_TOKEN` repository secret (from the `effect-storytime` prod vault). Once it exists, publishing a GitHub Release from a version tag runs `.github/workflows/publish.yml`, which runs `pnpm check` and publishes with provenance.

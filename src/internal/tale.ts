@@ -11,7 +11,7 @@ export const TypeId = '~effect-storytime/Tale';
 /** What a passing tale reached: its final model or state as a line, and the cases it touched. */
 export interface Reached {
 	readonly final?: string;
-	readonly cases?: ReadonlyArray<string>;
+	readonly cases: ReadonlyArray<string>;
 }
 
 export interface Told {

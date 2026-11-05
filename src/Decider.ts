@@ -58,5 +58,7 @@ export const handle =
 	) =>
 	(key: Key, input: Input): Effect.Effect<ReadonlyArray<Event>, Rejection | E, Id> =>
 		Effect.flatMap(Store, (store) =>
-			Effect.flatMap(decideIn(decider, store, rule(decider))(key, input), Effect.fromResult)
+			Effect.flatMap(decideIn(decider, store, rule(decider))(key, input), ({ decided }) =>
+				Effect.fromResult(decided)
+			)
 		);

@@ -5,7 +5,7 @@
 import { it } from '@effect/vitest';
 import { Cause, Effect, Exit, Option, Schema } from 'effect';
 import type { TestContext } from 'vitest';
-import type { Exploration } from './Exploration.ts';
+import type { Decider } from './Decider.ts';
 import type { Program, Tagged } from './Program.ts';
 import * as Story from './Story.ts';
 import type { StoryRecord } from './StoryRecord.ts';
@@ -72,10 +72,18 @@ export const stories = (...tales: ReadonlyArray<Tale.Tale>): void => {
 	for (const tale of tales) it.effect(tale.title, (ctx) => tell(ctx, tale));
 };
 
-/** Registers one test requiring a Program's tales to touch every one of its cases. */
-export const covers = <Model, Message extends Tagged, Command extends Tagged>(
-	program: Program<Model, Message, Command>,
-	tales: ReadonlyArray<Story.Story<Model, Message, Command> | Exploration<Model, Message, Command>>
+/** Registers one test requiring a Program's or a Decider's tales to touch every one of its cases. */
+export const covers = <
+	Model,
+	Message extends Tagged,
+	Command extends Tagged,
+	State,
+	Input,
+	Event,
+	Rejection
+>(
+	subject: Program<Model, Message, Command> | Decider<State, Input, Event, Rejection>,
+	tales: ReadonlyArray<Tale.Tale>
 ): void => {
-	it.effect('its tales touch every case', () => Tale.covers(program, tales));
+	it.effect('its tales touch every case', () => Tale.covers(subject, tales));
 };

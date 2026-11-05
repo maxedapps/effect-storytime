@@ -16,7 +16,7 @@ Install it from its git tag, which carries the built `dist/`, so installing runs
 ```yaml
 # pnpm-workspace.yaml
 catalog:
-  effect-storytime: github:maxedapps/effect-storytime#v0.1.0
+  effect-storytime: github:maxedapps/effect-storytime#v0.2.0
 ```
 
 Add `effect` beside it and, for the Vitest adapter and the reporter, `vitest` and `@effect/vitest`.
@@ -247,7 +247,9 @@ Every `when` is followed by `accepted(...events)` (exact and ordered; `accepted(
 
 ## Exploration
 
-An exploration generates stories: random paths of sends, command answers and restarts, each checked with every strict rule except command assertions (a path asserts no effects, so it owes none). A failing path shrinks to a short story, its counterexample.
+An exploration generates tales: random paths through a Program or a Decider, each checked with every strict rule except command assertions (a path asserts no effects, so it owes none). A failing path shrinks to a short story or decision, its counterexample.
+
+A Program's paths send messages, answer pending commands and restart:
 
 ```ts
 import { Arbitrary, Schema } from 'effect';
@@ -272,11 +274,22 @@ export const talks = Exploration.make('a chat talks', chat, {
 const checked = Exploration.check(talks); // Effect<{ runs, cases }, StoryFailure>
 ```
 
-A failure's `counterexample` holds the shrunk path as story lines, `step` numbers the line that failed and `replay` is a token: `Exploration.check(talks, { replay })` checks exactly that path again.
+A Decider's paths decide one input after another, rejections included:
+
+```ts
+export const memberships = Exploration.decisions('memberships hold', membership, {
+	// Both optional: the Decider's `initial`, and any input the Input Schema allows.
+	given: Arbitrary.Constant(membership.initial),
+	when: Arbitrary.schema(Input)
+	// runs, steps and seed as above
+});
+```
+
+A failure's `counterexample` holds the shrunk path as story or decision lines, `step` numbers the line that failed and `replay` is a token: `Exploration.check(talks, { replay })` checks exactly that path again.
 
 ## Tale and covers
 
-A tale is a story, an exploration or a decision. `Tale.lines(tale)` and `Tale.run(tale)` work on any of them. `Tale.covers(program, tales)` runs a Program's stories and explorations and fails with `Tale.Uncovered { missing }` unless together they send, produce or reach every Message, Command and (for a tagged union) Model case.
+A tale is a story, an exploration or a decision. `Tale.lines(tale)` and `Tale.run(tale)` work on any of them. `Tale.covers(subject, tales)` runs a Program's or a Decider's tales and fails with `Tale.Uncovered { missing }` unless together they touch every case `Tale.cases(subject)` lists: a Program's Message and Command cases and, for a tagged union, its Model cases; a Decider's cases of each of its State, Input, Event and Rejection Schemas that is a tagged union.
 
 ## Vitest
 
@@ -290,6 +303,7 @@ describe('chat', () => {
 	stories(answers, stops, talks, lifecycle);
 	// One test: the tales touch every case.
 	covers(chat, [answers, stops, talks]);
+	covers(membership, [lifecycle, memberships]);
 });
 
 layer(Memberships.layer)('memberships in the database', (it) => {
@@ -325,8 +339,8 @@ The same tests give the same bytes: records are sorted by file and then test nam
 | `lines` | the tale's lines; an exploration has one line naming its runs, steps and seed |
 | `status` | `passed` or `failed` |
 | `final` | the final model or state as a line, once a story or decision passed |
-| `cases` | the cases a passing story or exploration sent, produced or reached |
-| `failure` | for a `StoryFailure`: `step`, `line`, `message`, `expected?`, `actual?` and, for an exploration, `counterexample` (the shrunk story's lines, which `step` numbers) and `replay` |
+| `cases` | the cases a passing tale touched: a story's or exploration's messages, commands and models, a decision's or exploration's inputs, events, rejections and states |
+| `failure` | for a `StoryFailure`: `step`, `line`, `message`, `expected?`, `actual?` and, for an exploration, `counterexample` (the shrunk story's or decision's lines, which `step` numbers) and `replay` |
 
 A tale that failed with another error (such as a database error in `Decision.against`) has only `status: "failed"`. [`test/fixtures/report.json`](test/fixtures/report.json) is a full example.
 

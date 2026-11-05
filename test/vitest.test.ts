@@ -147,7 +147,7 @@ describe('tell', () => {
 					lines: Decision.lines(revokes),
 					status: 'passed',
 					final: '{"active":0,"checkedAt":null,"source":"teachable"}',
-					cases: undefined
+					cases: ['Input.Revoke', 'Rejection.NotActive']
 				}
 			]);
 		}).pipe(Effect.provide(Memberships.layer))
