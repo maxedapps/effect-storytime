@@ -289,7 +289,7 @@ A failure's `counterexample` holds the shrunk path as story or decision lines, `
 
 ## Tale and covers
 
-A tale is a story, an exploration or a decision. `Tale.lines(tale)` and `Tale.run(tale)` work on any of them. `Tale.covers(subject, tales)` runs a Program's or a Decider's tales and fails with `Tale.Uncovered { missing }` unless together they touch every case `Tale.cases(subject)` lists: a Program's Message and Command cases and, for a tagged union, its Model cases; a Decider's cases of each of its State, Input, Event and Rejection Schemas that is a tagged union.
+A tale is a story, an exploration or a decision. `Tale.lines(tale)` and `Tale.run(tale)` work on any of them. `Tale.covers(subject, tales)` runs a Program's or a Decider's tales and fails with `Tale.Uncovered { missing }` unless together they touch every case `Tale.cases(subject)` lists: a Program's Message and Command cases and, for a tagged union, its Model cases; a Decider's cases of each of its State, Input, Event and Rejection Schemas that is a tagged union. Only the subject's own tales count; a tale of another Program or Decider touches none of its cases, even where the names match. A Decider's State cases count every state an input's events pass through, not only the last.
 
 ## Vitest
 

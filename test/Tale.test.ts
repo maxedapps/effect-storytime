@@ -34,16 +34,18 @@ const Push = Schema.TaggedUnion({ Push: {} });
 const Swung = Schema.TaggedUnion({ Swung: {} });
 const Stuck = Schema.TaggedUnion({ Stuck: {} });
 
-const door = Decider.make({
+const doorRules = {
 	State: Door,
 	Input: Push,
 	Event: Swung,
 	Rejection: Stuck,
 	initial: Door.cases.Closed.make({}),
 	decide: () => Result.succeed([Swung.cases.Swung.make({})]),
-	evolve: (current) =>
+	evolve: (current: typeof Door.Type) =>
 		Door.guards.Open(current) ? Door.cases.Closed.make({}) : Door.cases.Open.make({})
-});
+};
+
+const door = Decider.make(doorRules);
 
 const swings = Exploration.decisions('the door swings', door, { runs: 5 });
 
@@ -125,6 +127,34 @@ describe('Tale', () => {
 						'Rejection.AlreadyActive',
 						'Rejection.Manual'
 					]
+				})
+			);
+		})
+	);
+
+	it.effect('counts every state the events of one input pass through', () =>
+		Effect.gen(function* () {
+			const revolving = Decider.make({
+				...doorRules,
+				decide: () => Result.succeed([Swung.cases.Swung.make({}), Swung.cases.Swung.make({})])
+			});
+			const revolves = Exploration.decisions('the door revolves', revolving, { runs: 5 });
+			expect(yield* Effect.flip(Tale.covers(revolving, [revolves]))).toEqual(
+				new Tale.Uncovered({ missing: ['Rejection.Stuck'] })
+			);
+		})
+	);
+
+	it.effect('counts no tale of another subject, even one with the same case names', () =>
+		Effect.gen(function* () {
+			const twin = Decider.make(doorRules);
+			expect(
+				yield* Effect.flip(
+					Tale.covers(door, [Exploration.decisions('the twin swings', twin, { runs: 5 })])
+				)
+			).toEqual(
+				new Tale.Uncovered({
+					missing: ['State.Open', 'State.Closed', 'Input.Push', 'Event.Swung', 'Rejection.Stuck']
 				})
 			);
 		})

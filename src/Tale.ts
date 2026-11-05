@@ -62,7 +62,7 @@ export class Uncovered extends Schema.TaggedError<Uncovered>()('Uncovered', {
 
 /**
  * Runs a Program's stories and explorations, or a Decider's decisions and explorations, and
- * requires them to touch every case it has between them.
+ * requires them to touch every case it has between them. Tales of another subject don't count.
  */
 export const covers = Effect.fnUntraced(function* <
 	Model,
@@ -76,7 +76,12 @@ export const covers = Effect.fnUntraced(function* <
 	subject: Program<Model, Message, Command> | Decider<State, Input, Event, Rejection>,
 	tales: ReadonlyArray<Tale>
 ): Effect.fn.Return<void, StoryFailure | Uncovered> {
-	const reached = yield* Effect.forEach(tales, run);
+	const reached = yield* Effect.all(
+		tales.flatMap((tale) => {
+			const told = tale[TypeId]();
+			return told.subject === subject ? [told.run] : [];
+		})
+	);
 	const touched = new Set(reached.flatMap((outcome) => outcome.cases));
 	const missing = cases(subject).filter((name) => !touched.has(name));
 	return yield* missing.length > 0 ? Effect.fail(new Uncovered({ missing })) : Effect.void;

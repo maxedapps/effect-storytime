@@ -38,3 +38,6 @@ No UI. The person gets the gate summary (coverage and mutation score), the new A
 None.
 
 ## Settled findings
+
+- medium bug: `Tale.covers` counted tales of another subject whose case names overlap, so an unrelated Decider's tales could cover the target — fixed: each tale's `Told` names its `subject` and `covers` runs only the covered subject's tales; ADR decision 5 revised; `test/Tale.test.ts` "counts no tale of another subject, even one with the same case names"
+- medium bug: `caser` counted only the final state of a ruling, so a state one input's events entered and left (Closed → Open → Closed) could never be covered — fixed: the strict ruling returns every state its events reached and `caser` counts them all, shared by decisions, `against` and explorations; `test/Tale.test.ts` "counts every state the events of one input pass through"

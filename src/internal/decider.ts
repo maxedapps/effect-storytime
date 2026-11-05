@@ -14,6 +14,11 @@ import type { Ruling } from './store.ts';
 
 export type Decided<Event, Rejection> = Result.Result<ReadonlyArray<Event>, Rejection>;
 
+/** A strictly checked ruling, with every state its events reached on the way, in order. */
+export interface Ruled<State, Event, Rejection> extends Ruling<State, Event, Rejection> {
+	readonly states: ReadonlyArray<State>;
+}
+
 /** The checks on a Decider's Schemas. */
 export const checks = <State, Input, Event, Rejection>(
 	decider: Decider<State, Input, Event, Rejection>
@@ -44,13 +49,13 @@ export const caser = <State, Input, Event, Rejection>(
 	const rejection = caseIn(decider.Rejection, 'Rejection');
 	return {
 		state,
-		ruled: (given: Input, { decided, reached }: Ruling<State, Event, Rejection>) => [
+		ruled: (given: Input, { decided, states }: Ruled<State, Event, Rejection>) => [
 			...input(given),
 			...Result.match(decided, {
 				onSuccess: (events) => events.flatMap(event),
 				onFailure: rejection
 			}),
-			...state(reached)
+			...states.flatMap(state)
 		]
 	};
 };
@@ -88,7 +93,7 @@ export const strict = <State, Input, Event, Rejection>(
 	const rule = (
 		current: State,
 		input: Input
-	): Effect.Effect<Ruling<State, Event, Rejection>, Problem> =>
+	): Effect.Effect<Ruled<State, Event, Rejection>, Problem> =>
 		Effect.gen(function* () {
 			yield* the.input.valid(input);
 			const copy = yield* the.input.copy(input);
@@ -98,21 +103,24 @@ export const strict = <State, Input, Event, Rejection>(
 				() => decider.decide(current, copy),
 				output
 			);
-			if (Result.isFailure(decided)) return { decided, reached: current };
+			// Stryker disable next-line ArrayDeclaration: only caser reads states, and a non-state names no case
+			if (Result.isFailure(decided)) return { decided, reached: current, states: [] };
 			const events = yield* Effect.forEach(decided.success, the.event.copy);
-			const reached = yield* Effect.reduce(
-				events,
-				() => current,
-				(from, event) =>
-					pure(
-						'evolve',
-						joined([the.state.key(from), the.event.key(event)]),
-						() => decider.evolve(from, event),
-						(next) => Effect.andThen(the.state.valid(next), the.state.key(next))
-					).pipe(Effect.flatMap(the.state.copy))
-			);
+			// Stryker disable next-line ArrayDeclaration: only caser reads states, and a non-state names no case
+			const states: Array<State> = [];
+			let reached = current;
+			for (const event of events) {
+				const from = reached;
+				reached = yield* pure(
+					'evolve',
+					joined([the.state.key(from), the.event.key(event)]),
+					() => decider.evolve(from, event),
+					(next) => Effect.andThen(the.state.valid(next), the.state.key(next))
+				).pipe(Effect.flatMap(the.state.copy));
+				states.push(reached);
+			}
 			yield* invariants(reached);
-			return { decided: Result.succeed(events), reached };
+			return { decided: Result.succeed(events), reached, states };
 		});
 
 	return { check, rule };

@@ -15,6 +15,8 @@ export interface Reached {
 }
 
 export interface Told {
+	/** The Program or Decider the tale is about. */
+	readonly subject: object;
 	readonly lines: ReadonlyArray<string>;
 	readonly run: Effect.Effect<Reached, StoryFailure>;
 }

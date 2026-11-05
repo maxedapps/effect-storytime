@@ -9,9 +9,8 @@ import type { Decider, Store } from './Decider.ts';
 import { describer } from './internal/canonical.ts';
 import { attempt, Problem } from './internal/check.ts';
 import { caser, checks, strict } from './internal/decider.ts';
-import type { Decided } from './internal/decider.ts';
+import type { Decided, Ruled } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from './internal/store.ts';
-import type { Ruling } from './internal/store.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import { StoryFailure } from './Story.ts';
@@ -68,7 +67,7 @@ export class Decision<State, Input, Event, Rejection> extends Data.TaggedClass('
 	readonly steps: ReadonlyArray<Step<State, Input, Event, Rejection>>;
 }> {
 	[TypeId](): Told {
-		return { lines: lines(this), run: run(this) };
+		return { subject: this.decider, lines: lines(this), run: run(this) };
 	}
 }
 
@@ -112,7 +111,7 @@ export const lines = <State, Input, Event, Rejection>(
 /** Where a decision's state lives, in memory or in a Store, checked by the strict rules either way. */
 interface Backend<State, Input, Event, Rejection, E> {
 	readonly seed: (state: State) => Effect.Effect<void, Problem | E>;
-	readonly decide: (input: Input) => Effect.Effect<Ruling<State, Event, Rejection>, Problem | E>;
+	readonly decide: (input: Input) => Effect.Effect<Ruled<State, Event, Rejection>, Problem | E>;
 	readonly current: Effect.Effect<State, Problem | E>;
 }
 

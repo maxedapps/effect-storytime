@@ -61,6 +61,7 @@ type Walk = Effect.Effect<ReadonlyArray<string>, Broken>;
 
 export class Exploration extends Data.TaggedClass('Exploration')<{
 	readonly title: string;
+	readonly subject: object;
 	readonly runs: number;
 	readonly steps: number;
 	readonly seed: string | number;
@@ -68,7 +69,7 @@ export class Exploration extends Data.TaggedClass('Exploration')<{
 	readonly walks: Arbitrary.Arbitrary<Walk>;
 }> {
 	[TypeId](): Told {
-		return { lines: lines(this), run: check(this) };
+		return { subject: this.subject, lines: lines(this), run: check(this) };
 	}
 }
 
@@ -89,6 +90,7 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	const restarts = options.restarts ?? true;
 	return new Exploration({
 		title,
+		subject: program,
 		...settled(title, options),
 		restarts,
 		walks: Arbitrary.map(
@@ -111,6 +113,7 @@ export const decisions = <State, Input, Event, Rejection>(
 ): Exploration =>
 	new Exploration({
 		title,
+		subject: decider,
 		...settled(title, options),
 		restarts: false,
 		walks: Arbitrary.map(

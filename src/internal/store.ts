@@ -36,12 +36,12 @@ export const rule =
  * ruling. `ruling` is `rule` for `handle` and the strictly checked one for `Decision.against`.
  */
 export const decideIn =
-	<State, Input, Event, Rejection, Key, E, X>(
+	<State, Input, Event, Rejection, Key, E, X, Ruled extends Ruling<State, Event, Rejection>>(
 		decider: Decider<State, Input, Event, Rejection>,
 		store: Store<Key, State, Event, E>,
-		ruling: (state: State, input: Input) => Effect.Effect<Ruling<State, Event, Rejection>, X>
+		ruling: (state: State, input: Input) => Effect.Effect<Ruled, X>
 	) =>
-	(key: Key, input: Input): Effect.Effect<Ruling<State, Event, Rejection>, E | X> =>
+	(key: Key, input: Input): Effect.Effect<Ruled, E | X> =>
 		store.transaction(
 			Effect.gen(function* () {
 				const ruled = yield* ruling(yield* loadOrInitial(decider, store, key), input);

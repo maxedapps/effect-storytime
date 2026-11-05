@@ -102,7 +102,7 @@ export class Story<Model, Message extends Tagged, Command extends Tagged> extend
 	readonly steps: Steps<Model, Message, Command>;
 }> {
 	[TypeId](): Told {
-		return { lines: lines(this), run: run(this) };
+		return { subject: this.program, lines: lines(this), run: run(this) };
 	}
 }
 
