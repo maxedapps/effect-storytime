@@ -1,0 +1,75 @@
+/**
+ * A Decider is the command side of a consistency boundary: `decide` holds one handler per command
+ * tag that turns a state and that command into events or a rejection, `evolve` folds an event into
+ * the state, and named invariants say which states may exist. `handle` runs it on a Store in one
+ * transaction, which makes it an aggregate, typed per command by its handler.
+ */
+import { Effect } from 'effect';
+import type { Context, Option, Result, Schema } from 'effect';
+import type { Invariants, Tagged } from './Program.ts';
+/** One pure handler per command tag: what the command tagged `Tag` gives in a state. */
+export type Handlers<State, Command extends Tagged, Event, Rejection> = {
+    readonly [Tag in Command['_tag']]: (state: State, command: Command & {
+        readonly _tag: Tag;
+    }) => Result.Result<ReadonlyArray<Event>, Rejection>;
+};
+export interface Decider<State, Command extends Tagged, Event, Rejection, Decide extends Handlers<State, Command, Event, Rejection> = Handlers<State, Command, Event, Rejection>> {
+    readonly State: Schema.Codec<State, unknown>;
+    readonly Command: Schema.Codec<Command, unknown>;
+    readonly Event: Schema.Codec<Event, unknown>;
+    readonly Rejection: Schema.Codec<Rejection, unknown>;
+    /** The state of a key nothing was saved for yet. */
+    readonly initial: State;
+    readonly decide: Decide;
+    readonly evolve: (state: State, event: Event) => State;
+    readonly invariants: Invariants<State>;
+}
+export interface Definition<State, Command extends Tagged, Event, Rejection, Decide extends Handlers<State, Command, Event, Rejection>> {
+    readonly State: Schema.Codec<State, unknown>;
+    readonly Command: Schema.Codec<Command, unknown>;
+    readonly Event: Schema.Codec<Event, unknown>;
+    readonly Rejection: Schema.Codec<Rejection, unknown>;
+    readonly initial: State;
+    /** One handler per command tag; each handler's return type is its command's contract. */
+    readonly decide: Decide;
+    readonly evolve: (state: State, event: Event) => State;
+    /** Named predicates every state must satisfy, checked by `handle` on the state each command reaches, before it saves. */
+    readonly invariants?: Invariants<State>;
+}
+export declare const make: <State, Command extends Tagged, Event, Rejection, Decide extends Handlers<State, Command, Event, Rejection>>(definition: Definition<State, Command, Event, Rejection, Decide>) => Decider<State, Command, Event, Rejection, Decide>;
+/** What the handlers of `Decide` give for the commands `C`. */
+type Ruled<Decide, C extends Tagged> = Decide[C['_tag'] & keyof Decide] extends infer Handler ? Handler extends (...args: never) => infer Given ? Given : never : never;
+/** The events a command `C` may give, from its handler in `Decide`. */
+export type EventOf<Decide, C extends Tagged> = Ruled<Decide, C> extends Result.Result<infer Events extends ReadonlyArray<unknown>, unknown> ? Events[number] : never;
+/** The rejections a command `C` may give, from its handler in `Decide`. */
+export type RejectionOf<Decide, C extends Tagged> = Ruled<Decide, C> extends Result.Result<unknown, infer Rejection> ? Rejection : never;
+/**
+ * Where a Decider's states live: one row or several tables, implemented by the app as a
+ * `Context.Service`. `save` gets the events too, so a store may keep them.
+ *
+ * The contract `handle` relies on: `transaction` protects everything `load` read until `save`
+ * commits, so no concurrent command decides on the same state (SERIALIZABLE with retries, or
+ * writes guarded by a version), `load` gives back exactly what `save` stored, and `transaction` is
+ * the outermost transaction, so `handle` resolves only after its commit. Run `handle` inside no
+ * other transaction: a nested one keeps the outer isolation and commits only with it.
+ */
+export interface Store<Key, State, Event, E = never> {
+    readonly load: (key: Key) => Effect.Effect<Option.Option<State>, E>;
+    readonly save: (key: Key, state: State, events: ReadonlyArray<Event>) => Effect.Effect<void, E>;
+    readonly transaction: <A, E2, R>(effect: Effect.Effect<A, E2, R>) => Effect.Effect<A, E | E2, R>;
+}
+/** What `handle` committed: the events and the state they reached. */
+export interface Handled<State, Event> {
+    readonly events: ReadonlyArray<Event>;
+    readonly state: State;
+}
+/**
+ * Handles commands for keys of a Store service: loads the state (or `initial`), decides with the
+ * command's handler, folds the events, checks the invariants on the state they reach and saves, in
+ * one transaction, traced as the span `Decider.handle`. Resolves after the commit with the events
+ * and the state they reached; a rejection fails the Effect and a broken invariant dies with
+ * `Program.InvariantBroken`. The events and rejections are those of the command's handler.
+ */
+export declare const handle: <State, Command extends Tagged, Event, Rejection, Decide extends Handlers<State, Command, Event, Rejection>, Id, Key, E>(decider: Decider<State, Command, Event, Rejection, Decide>, Store: Context.Key<Id, Store<Key, State, Event, E>>) => <C extends Command>(key: Key, command: C) => Effect.Effect<Handled<State, EventOf<Decide, C>>, RejectionOf<Decide, C> | E, Id>;
+export {};
+//# sourceMappingURL=Decider.d.ts.map
