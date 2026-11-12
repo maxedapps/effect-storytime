@@ -14,7 +14,7 @@ Install it from its git tag, which carries the built `dist/`, so installing runs
 ```yaml
 # pnpm-workspace.yaml
 catalog:
-  effect-storytime: github:maxedapps/effect-storytime#v0.5.1
+  effect-storytime: github:maxedapps/effect-storytime#v0.6.0
 ```
 
 `effect` (4.1.2 or newer) is the one required peer. Where you test with Vitest, add `vitest` (5.1) and `@effect/vitest` (4.1.2), which only the `effect-storytime/vitest` entry loads. The domain entry imports nothing from the testing entries, so production code loads none of it, and `effect-storytime/testing` loads neither Vitest nor Node's `fs`.
