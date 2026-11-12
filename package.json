@@ -39,7 +39,6 @@
 		"format": "oxfmt",
 		"lint": "oxlint",
 		"mutate": "stryker run",
-		"prepare": "effect-tsgo patch --typescript --oxlint",
 		"test": "vitest run --coverage",
 		"typecheck": "tsc"
 	},
