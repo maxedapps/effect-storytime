@@ -21,7 +21,7 @@ Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The 
 | [domain-modelling.md](domain-modelling.md) | decide where a rule lives: a Decider, a Program, a Store or plain Effect |
 | [decider.md](decider.md) | write the command side of a consistency boundary and the Store it runs on |
 | [program.md](program.md) | write a process, a workflow step or UI state as a pure state machine |
-| [loop.md](loop.md) | run a Program with real effects and keep its model across restarts |
+| [loop.md](loop.md) | run a Program's commands through the app's handlers, to the end or for as long as it lives, and commit its model with its writes |
 | [stories.md](stories.md) | test a Program step by step |
 | [decisions.md](decisions.md) | test a Decider, in memory or through its real Store |
 | [explorations.md](explorations.md) | check random paths through a Program or a Decider |
@@ -58,3 +58,4 @@ The ADRs in [`adrs/`](../adrs) record the design:
 - [0003](../adrs/0003-lean-domain-library.md): a Decider is the command side and a Program the process manager, with no aggregate, repository or event store types. It also sets the Store contract.
 - [0004](../adrs/0004-readable-failures-and-bound-steps.md): failure messages that show the step, line and counterexample, and step builders bound to their subject (`Story.of`, `Decision.of`).
 - [0005](../adrs/0005-honest-contracts.md): one invariant contract for tales, `handle` and a Loop; every `anyOrder` order's final; exploration properties; the vitest entry; `Loop.join`.
+- [0006](../adrs/0006-a-loop-that-runs-a-process-to-the-end.md): a Loop that runs a process to the end: typed handler errors, `Loop.write`, a transactional `store`, `settled` and `Loop.run`.

@@ -37,7 +37,7 @@ A Program never changes a Decider's state directly. It asks with a command, and 
 - `Command`, `Event` and `Rejection` of a Decider, and `Message` and `Command` of a Program, should be `Schema.TaggedUnion`s. A Program requires them to be: its `Message` and `Command` must list their `cases`, which `Schema.TaggedUnion` does and `Schema.TaggedStruct` alone does not. A single-case union is fine (`Schema.TaggedUnion({ Award: { ... } })`).
 - A Program's `Model` and a Decider's `State` may be any Schema. When one is a tagged union, its cases count towards coverage (`Model.Ready`, `State.Active`). A struct has no cases.
 - Use the union's own tools: `Command.cases.Grant.make({...})` to build a value, `Command.match(value, {...})` or `Command.match({...})` for exhaustive handling, and `Command.guards.Grant(value)` to test one case. Don't compare `_tag` by hand or write `{ _tag: 'Grant', ... }` literals.
-- Every value must survive a JSON round trip through its Schema unchanged, because tales copy every value that way and a Store or `persist` usually does too. Prefer encodable types (`Schema.Int`, `Schema.NonEmptyString`, `Schema.BooleanFromBit`, ISO date strings) over class instances or functions.
+- Every value must survive a JSON round trip through its Schema unchanged, because tales copy every value that way and a Store usually does too. Prefer encodable types (`Schema.Int`, `Schema.NonEmptyString`, `Schema.BooleanFromBit`, ISO date strings) over class instances or functions.
 
 ## Rules for the functions
 
@@ -55,4 +55,4 @@ There is no event store. `Decider.Store.save` gets the events alongside the new 
 
 A process that must survive restarts keeps its unfinished work in its model, and its `resume` reissues it. The commands it reissues must then be idempotent at their Decider, by an id or a key in the command that the Decider rejects a second time. [recipes.md](recipes.md) builds this with badges.
 
-The Loop cannot recover a message that never reached it. If a Decider commits and the process crashes before the message about it is dispatched, nothing remembers it. Where that gap matters, write the message in the same transaction as the commit (an outbox) and deliver it from there, or run the process with `effect/workflow`.
+The Loop cannot recover a message that never reached it. If a Decider commits and the process crashes before the message about it is dispatched, nothing remembers it. Where that gap matters, write the message in the same transaction as the commit (an outbox, which a Program can add with `Loop.write`) and deliver it from there, or run the process with `effect/workflow`.

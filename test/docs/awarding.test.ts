@@ -1,7 +1,7 @@
 // The badge awarding process as docs/recipes.md shows it: a process manager that drives a Decider
 // and survives a crash.
 import { describe, expect, layer } from '@effect/vitest';
-import { Effect, Option, Ref, Stream } from 'effect';
+import { Effect, Option, Ref } from 'effect';
 import { Decider, Loop } from 'effect-storytime';
 import { Decision, Story } from 'effect-storytime/testing';
 import { Vitest } from 'effect-storytime/vitest';
@@ -57,9 +57,10 @@ layer(Badges.layer)('awarding in a Loop', (it) => {
 		Effect.gen(function* () {
 			// #region loop
 			const stored = yield* Ref.make(Option.none<Awarding>());
-			const persist = {
+			const store: Loop.Store<Awarding, never, never> = {
 				load: Ref.get(stored),
-				save: (model: Awarding) => Ref.set(stored, Option.some(model))
+				save: (model) => Ref.set(stored, Option.some(model)),
+				transaction: (effect) => effect
 			};
 			const award = Decider.handle(badges, Badges);
 			const handler = Command.match({
@@ -77,25 +78,23 @@ layer(Badges.layer)('awarding in a Loop', (it) => {
 					const crashing = yield* Loop.make(awarding, {
 						init: { model: { pending: [] } },
 						handler: () => Effect.never,
-						persist
+						store
 					});
 					yield* crashing.dispatch(LecturesCompleted.make({ learner: 'ada', total: 1 }));
 				})
 			);
 
-			// The next process resumes the stored model, and `resume` sends the award again.
-			const loop = yield* Loop.make(awarding, {
+			// The next process resumes the stored model, `resume` sends the award again, and the run
+			// ends once it is done.
+			const recovered = yield* Loop.run(awarding, {
 				init: { model: { pending: [] } },
 				handler,
-				persist
+				store
 			});
-			yield* loop.changes.pipe(
-				Stream.filter(({ pending }) => pending.length === 0),
-				Stream.runHead
-			);
 			// #endregion loop
-			const store = yield* Badges;
-			expect(yield* store.load('ada')).toEqual(Option.some({ badges: ['first-lecture'] }));
+			expect(recovered).toEqual({ pending: [] });
+			const earned = yield* Badges;
+			expect(yield* earned.load('ada')).toEqual(Option.some({ badges: ['first-lecture'] }));
 		})
 	);
 });

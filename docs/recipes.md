@@ -118,14 +118,15 @@ const once = Decision.make(
 
 ### Running it
 
-The handler calls `Decider.handle` for each `Award`. `AlreadyEarned` means an earlier run already awarded the badge, perhaps one a crash cut short, so the handler treats it as done. With `persist`, the Loop saves the model before it starts the award, so the next process finds the award pending and sends it again:
+The handler calls `Decider.handle` for each `Award`. `AlreadyEarned` means an earlier run already awarded the badge, perhaps one a crash cut short, so the handler treats it as done. With a `store`, the Loop saves the model before it starts the award, so the next process finds the award pending, sends it again, and `Loop.run` returns once it is done:
 
 <!-- snippet: test/docs/awarding.test.ts#loop -->
 ```ts
 const stored = yield* Ref.make(Option.none<Awarding>());
-const persist = {
+const store: Loop.Store<Awarding, never, never> = {
 	load: Ref.get(stored),
-	save: (model: Awarding) => Ref.set(stored, Option.some(model))
+	save: (model) => Ref.set(stored, Option.some(model)),
+	transaction: (effect) => effect
 };
 const award = Decider.handle(badges, Badges);
 const handler = Command.match({
@@ -143,22 +144,19 @@ yield* Effect.scoped(
 		const crashing = yield* Loop.make(awarding, {
 			init: { model: { pending: [] } },
 			handler: () => Effect.never,
-			persist
+			store
 		});
 		yield* crashing.dispatch(LecturesCompleted.make({ learner: 'ada', total: 1 }));
 	})
 );
 
-// The next process resumes the stored model, and `resume` sends the award again.
-const loop = yield* Loop.make(awarding, {
+// The next process resumes the stored model, `resume` sends the award again, and the run
+// ends once it is done.
+const recovered = yield* Loop.run(awarding, {
 	init: { model: { pending: [] } },
 	handler,
-	persist
+	store
 });
-yield* loop.changes.pipe(
-	Stream.filter(({ pending }) => pending.length === 0),
-	Stream.runHead
-);
 ```
 
 The gap this doesn't close is a message that never reached the Loop ([domain-modelling.md](domain-modelling.md#state-is-the-truth)).
@@ -182,7 +180,7 @@ One way that keeps the entries apart:
 src/domain/membership.ts          Schemas, decide, evolve, the Decider (imports effect-storytime)
 src/domain/chat.ts                Schemas, update, the Program
 src/server/memberships.ts         the Store service and its layer on the database
-src/server/chat-loop.ts           Loop.make with the handler and persist
+src/server/chat-loop.ts           Loop.make with the handler and the store
 test/domain/membership.test.ts    decisions, an exploration, Vitest.stories and Vitest.covers
 test/server/memberships.test.ts   the same decisions through Decision.against
 vitest.config.ts                  Vitest.Reporter

@@ -2,7 +2,7 @@
 
 effect-storytime is two libraries for Effect 4 in one package:
 
-- **A domain-driven design library** (`effect-storytime`). You write a domain as pure state machines whose inputs, outputs and side effects are Schema data. A **Decider** holds the rules of one consistency boundary: `decide(state, command)` gives events or a rejection, `evolve` folds them into the state, and named invariants say which states may exist. `Decider.handle` runs it on your **Store** in one transaction, which makes it an aggregate. A **Program** holds a process or UI state: `update(model, message)` gives the next model and the commands to start or cancel, and a **Loop** runs it with Effect, persisting the model across restarts. `handle` and a Loop both refuse a state or model that breaks an invariant before they save it.
+- **A domain-driven design library** (`effect-storytime`). You write a domain as pure state machines whose inputs, outputs and side effects are Schema data. A **Decider** holds the rules of one consistency boundary: `decide(state, command)` gives events or a rejection, `evolve` folds them into the state, and named invariants say which states may exist. `Decider.handle` runs it on your **Store** in one transaction, which makes it an aggregate. A **Program** holds a process or UI state: `update(model, message)` gives the next model and the commands to start or cancel, and a **Loop** runs it with Effect: your handlers run its commands, their answers go back into `update`, and a store commits each model with its writes until the process settles. `handle` and a Loop both refuse a state or model that breaks an invariant before they save it.
 - **A story-based testing library** (`effect-storytime/testing`). You tell tales about the domain: **stories** about Programs, **decisions** about Deciders and **explorations** that generate random paths through either, check named properties on every step and shrink a failing one to a short counterexample. Every tale runs strict rules at every step (Schema validity, purity, JSON round trips, invariants, and an assertion for every command), and **covers** requires a subject's tales to touch every case it has. A **Vitest** adapter (`effect-storytime/vitest`) runs tales as tests and writes a deterministic JSON record of every tale told.
 
 The documentation is written for coding agents that use the library in their own projects. Start with [docs/README.md](docs/README.md).
@@ -110,7 +110,7 @@ export const form = Program.make({
 });
 ```
 
-Run the Decider with `Decider.handle(seats, SeatStore)`, where `SeatStore` is your app's Store service ([docs/decider.md](docs/decider.md)), and the Program with `Loop.make(form, { init, handler })` ([docs/loop.md](docs/loop.md)).
+Run the Decider with `Decider.handle(seats, SeatStore)`, where `SeatStore` is your app's Store service ([docs/decider.md](docs/decider.md)), and the Program with `Loop.make(form, { init, handler })`, or with `Loop.run` when it runs to an end ([docs/loop.md](docs/loop.md)).
 
 ## Quick start: the tales
 
@@ -201,7 +201,7 @@ export default defineConfig({
 | [docs/domain-modelling.md](docs/domain-modelling.md) | DDD building blocks, choosing a Decider or a Program, rules for Schemas and functions. |
 | [docs/decider.md](docs/decider.md) | `Decider.make`, `handle`, the Store contract, Stores on `effect/sql` and in memory. |
 | [docs/program.md](docs/program.md) | `Program.make`, `Next`, `resume` and invariants. |
-| [docs/loop.md](docs/loop.md) | `Loop.make`, handlers, cancels, `persist`, invariants and `join`. |
+| [docs/loop.md](docs/loop.md) | `Loop.run`, `Loop.make`, handlers with typed errors, writes, the store, `settled`, invariants and moving a hand-written driver. |
 | [docs/stories.md](docs/stories.md) | Story steps, `anyOrder` and its finals, `restart`, shared steps, lines and failures. |
 | [docs/decisions.md](docs/decisions.md) | Decision steps, `run` and `against` a real Store. |
 | [docs/explorations.md](docs/explorations.md) | Generated paths through Programs and Deciders, properties, counterexamples and replay. |

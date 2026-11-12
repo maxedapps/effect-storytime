@@ -4,8 +4,8 @@
 
 - **`Message` or `Command` isn't a `Program.Cases`.** A Program's `Message` and `Command` must list their `cases`. A `Schema.TaggedStruct`, a `Schema.Union` of structs or a plain struct doesn't, so wrap it: `Schema.TaggedUnion({ Award: { ... } })`.
 - **A Store's error type.** `Decider.Store<Key, State, Event, E>` defaults `E` to `never`. A database Store names its errors, such as `SqlError.SqlError | Schema.SchemaError`, and `handle` and `Decision.against` pass them on.
-- **A handler that can fail doesn't type-check.** `Loop`'s handler has the error type `never`. Turn every failure into a message the Program handles.
-- **`persist` with errors doesn't type-check.** Its `load` and `save` have the error type `never` too: `Effect.orDie` the infrastructure errors.
+- **A handler failure the Program should decide on.** A handler's typed error fails its command and the run: map the failures the Program decides on (a missing account, a refusal) to messages, and let only the ones that end the process through.
+- **A handler, store and write with different error types.** `Loop.make` and `Loop.run` infer one `E` for all of them, the union of their errors.
 
 ## Failing tales
 
@@ -38,5 +38,6 @@
 - **`handle` inside another transaction.** A nested transaction keeps the outer isolation and commits only with it, so `handle` resolves before its changes are durable. Call `handle` outside any transaction.
 - **An invariant breaks in production.** `handle` or a Loop dies with `Program.InvariantBroken` and saves nothing. It's a defect: fix `decide`, `evolve` or `update`, and add a decision or story that reproduces it.
 - **The Loop checks only invariants.** It runs `update` as it is, without Schema, purity or JSON checks. Those happen only in tales, so test every Program with stories and an exploration.
-- **A command dies and nothing notices.** A Loop keeps running when a command fiber dies. Fork or race `loop.join` to see it.
-- **`dispatch` doesn't wait for commands.** It completes once the model is updated. Wait for a model on `changes` to see a command's effect.
+- **A command fails and nothing notices.** A long-lived Loop keeps running when a command fiber fails or dies. Await `loop.settled`, or fork or race `loop.join`, to see it.
+- **Two Loops on one stored process.** A Loop loads its model once, at its start, so a second Loop on the same key works from a stale model and overwrites the first's saves. Run one at a time: a Durable Object, a lock or a queue per key.
+- **`dispatch` doesn't wait for commands.** It completes once the model is updated. Await `loop.settled`, or a model on `changes`, to see a command's effect.

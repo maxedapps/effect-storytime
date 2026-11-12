@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Deferred, Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream } from 'effect';
+import { Data, Deferred, Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream } from 'effect';
 import { Loop, Program } from 'effect-storytime';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
@@ -19,10 +19,16 @@ const answered = (left: number) =>
 		left
 	});
 
-const settled = (loop: Loop.Loop<Chat, Message>, done: (model: Chat) => boolean) =>
+const settled = (loop: Loop.Loop<Chat, Message, unknown>, done: (model: Chat) => boolean) =>
 	loop.changes.pipe(Stream.filter(done), Stream.runHead, Effect.map(Option.getOrThrow));
 
 const noSave = () => Effect.void;
+
+/** A store whose transaction adds nothing, for tests that watch only its loads and saves. */
+const stored = <Model>(
+	load: Effect.Effect<Option.Option<Model>>,
+	save: (model: Model) => Effect.Effect<void>
+): Loop.Store<Model, never, never> => ({ load, save, transaction: (effect) => effect });
 
 const hang = (started: Deferred.Deferred<void>, interrupted: Deferred.Deferred<void>) =>
 	Deferred.succeed(started, undefined).pipe(
@@ -30,8 +36,10 @@ const hang = (started: Deferred.Deferred<void>, interrupted: Deferred.Deferred<v
 		Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))
 	);
 
-const { Failed, Fetched, Dropped } = Fetch.Message.cases;
+const { Requested, Failed, Fetched, Dropped } = Fetch.Message.cases;
+const { Note } = Fetch.Command.cases;
 const page = { page: '1' };
+const fetching = Fetch.Command.cases.Fetch.make({ params: page });
 
 /**
  * A fetch Loop whose fetch answers at once, the first with `Fetched`, later ones with `Dropped`,
@@ -62,13 +70,11 @@ const racing = (racer: Fetch.Message) =>
 						),
 					Note: () => Effect.void
 				}),
-				persist: {
-					load: Effect.succeedNone,
-					save: (model) =>
-						model.attempts === 1
-							? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
-							: Effect.void
-				}
+				store: stored<Fetch.Model>(Effect.succeedNone, (model) =>
+					model.attempts === 1
+						? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
+						: Effect.void
+				)
 			}
 		);
 		yield* Effect.forkChild(loop.dispatch(Failed.make({ params: page })));
@@ -200,7 +206,7 @@ describe('Loop', () => {
 					Ask: () => Effect.as(note('ask'), Answered.make({ turn: 't1', left: 1 })),
 					SaveTurn: () => note('save turn')
 				}),
-				persist: { load: Effect.succeedNone, save: (model) => note(`store ${model._tag}`) }
+				store: stored<Chat>(Effect.succeedNone, (model) => note(`store ${model._tag}`))
 			});
 			yield* loop.dispatch(Asked.make({ turn: 't1', text: 'Why Effect?' }));
 			yield* settled(loop, Chat.guards.Ready).pipe(
@@ -226,7 +232,7 @@ describe('Loop', () => {
 					Ask: (command) => Effect.asVoid(Deferred.succeed(asked, command)),
 					SaveTurn: noSave
 				}),
-				persist: { load: Effect.succeedSome(asking), save: noSave }
+				store: stored<Chat>(Effect.succeedSome(asking), noSave)
 			});
 			expect(yield* Deferred.await(asked)).toEqual(
 				Command.cases.Ask.make({ turn: 't1', text: 'Why Effect?' })
@@ -263,13 +269,11 @@ describe('Loop', () => {
 					Loop.make(chat, {
 						init: { model: ready(2) },
 						handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave }),
-						persist: {
-							load: Effect.succeedNone,
-							save: (model) =>
-								Chat.guards.Asking(model)
-									? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
-									: Effect.void
-						}
+						store: stored<Chat>(Effect.succeedNone, (model) =>
+							Chat.guards.Asking(model)
+								? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
+								: Effect.void
+						)
 					}),
 					scope
 				);
@@ -350,10 +354,9 @@ describe('Loop', () => {
 					Ask: ({ turn }) => Effect.sync(() => void log.push(`ask ${turn}`)),
 					SaveTurn: noSave
 				}),
-				persist: {
-					load: Effect.succeedNone,
-					save: (model) => Effect.sync(() => void log.push(`store ${model._tag}`))
-				}
+				store: stored<Chat>(Effect.succeedNone, (model) =>
+					Effect.sync(() => void log.push(`store ${model._tag}`))
+				)
 			});
 			const defect = yield* loop
 				.dispatch(Stopped.make({}))
@@ -480,6 +483,37 @@ describe('Loop', () => {
 		})
 	);
 
+	it.effect('restarts a command that a transition both cancels and starts', () =>
+		Effect.gen(function* () {
+			const fetches = yield* Ref.make(0);
+			const loop = yield* Loop.make(
+				{
+					...Fetch.fetch,
+					// Requested restarts the fetch: it cancels the running one and starts it again.
+					update: (model: Fetch.Model, message: Fetch.Message) =>
+						Fetch.Message.guards.Requested(message)
+							? { model, cancels: [fetching], commands: [fetching] }
+							: Fetch.fetch.update(model, message)
+				},
+				{
+					init: { model: Fetch.start, commands: [fetching] },
+					handler: Fetch.Command.match({
+						// The first fetch hangs; the restarted one answers.
+						Fetch: ({ params }) =>
+							Effect.flatMap(
+								Ref.getAndUpdate(fetches, (n) => n + 1),
+								(n) => (n === 0 ? Effect.never : Effect.succeed(Fetched.make({ params })))
+							),
+						Note: noSave
+					})
+				}
+			);
+			yield* Effect.yieldNow;
+			yield* loop.dispatch(Requested.make({ params: page }));
+			expect(yield* loop.settled).toEqual({ attempts: 0, fetched: true });
+		})
+	);
+
 	it.effect('cancels a command named with its record keys in another order', () =>
 		Effect.gen(function* () {
 			const started = yield* Deferred.make<void>();
@@ -496,6 +530,302 @@ describe('Loop', () => {
 				Fetch.Message.cases.Dropped.make({ params: { second: '2', first: '1' } })
 			);
 			yield* Deferred.await(interrupted);
+		})
+	);
+});
+
+class Down extends Data.TaggedError('Down')<{ readonly what: string }> {}
+
+/**
+ * A fetch Loop whose Note commands are writes, recording into `log` the store's transaction, its
+ * saves, the writes and the fetches as they start. `fails` names what fails with `Down`.
+ */
+const writing = (fails: { load?: true; save?: number; note?: string; fetch?: string } = {}) =>
+	Effect.gen(function* () {
+		const log: Array<string> = [];
+		const note = (entry: string) => Effect.sync(() => void log.push(entry));
+		const loop = yield* Loop.make(Fetch.fetch, {
+			init: {
+				model: Fetch.start,
+				commands: [Note.make({ text: 'a' }), fetching, Note.make({ text: 'b' })]
+			},
+			handler: Fetch.Command.match({
+				Fetch: ({ params }) =>
+					params.page === fails.fetch
+						? Effect.fail(new Down({ what: 'fetch' }))
+						: Effect.andThen(note(`fetch ${params.page}`), Effect.never),
+				Note: ({ text }) =>
+					Loop.write(
+						text === fails.note ? Effect.fail(new Down({ what: 'note' })) : note(`note ${text}`)
+					)
+			}),
+			store: {
+				load: fails.load
+					? Effect.fail(new Down({ what: 'load' }))
+					: Effect.andThen(note('load'), Effect.succeedNone),
+				save: (model) =>
+					model.attempts === fails.save
+						? Effect.fail(new Down({ what: 'save' }))
+						: note(`save ${model.attempts}`),
+				transaction: (effect) =>
+					Effect.andThen(note('begin'), effect).pipe(
+						Effect.onExit((exit) => note(Exit.isSuccess(exit) ? 'commit' : 'rollback'))
+					)
+			}
+		});
+		return { loop, log };
+	});
+
+describe('Loop writes and store', () => {
+	it.effect(
+		'starts in one transaction: load, save, then the writes in order, before any work',
+		() =>
+			Effect.gen(function* () {
+				const { log } = yield* writing();
+				yield* Effect.yieldNow;
+				expect(log).toEqual(['begin', 'load', 'save 0', 'note a', 'note b', 'commit', 'fetch 1']);
+			})
+	);
+
+	it.effect('commits each transition with its writes before it publishes the model', () =>
+		Effect.gen(function* () {
+			const { loop, log } = yield* writing();
+			log.length = 0;
+			const published: Array<string> = [];
+			yield* loop.changes.pipe(
+				Stream.runForEach((model) =>
+					Effect.sync(() => void published.push(`${model.attempts} after ${log.length}`))
+				),
+				Effect.forkChild({ startImmediately: true })
+			);
+			yield* loop.dispatch(Failed.make({ params: { page: '2' } }));
+			yield* Effect.yieldNow;
+			expect(log).toEqual(['begin', 'save 1', 'note retrying', 'commit', 'fetch 2']);
+			expect(published).toEqual(['0 after 0', '1 after 4']);
+		})
+	);
+
+	it.effect('fails a transition whose write fails, which saves, publishes and starts nothing', () =>
+		Effect.gen(function* () {
+			const { loop, log } = yield* writing({ note: 'retrying' });
+			log.length = 0;
+			const failure = yield* Effect.flip(loop.dispatch(Failed.make({ params: { page: '2' } })));
+			expect(failure).toEqual(new Down({ what: 'note' }));
+			expect(log).toEqual(['begin', 'save 1', 'rollback']);
+			expect(yield* loop.model).toEqual(Fetch.start);
+		})
+	);
+
+	it.effect('fails a transition whose save fails', () =>
+		Effect.gen(function* () {
+			const { loop, log } = yield* writing({ save: 1 });
+			log.length = 0;
+			const failure = yield* Effect.flip(loop.dispatch(Failed.make({ params: { page: '2' } })));
+			expect(failure).toEqual(new Down({ what: 'save' }));
+			expect(log).toEqual(['begin', 'rollback']);
+			expect(yield* loop.model).toEqual(Fetch.start);
+		})
+	);
+
+	it.effect('fails its start when the load fails', () =>
+		Effect.gen(function* () {
+			expect(yield* Effect.flip(writing({ load: true }))).toEqual(new Down({ what: 'load' }));
+		})
+	);
+
+	it.effect('fails a command whose message leads to a failing transition', () =>
+		Effect.gen(function* () {
+			const loop = yield* Loop.make(Fetch.fetch, {
+				init: { model: Fetch.start, commands: [fetching] },
+				handler: Fetch.Command.match({
+					Fetch: ({ params }) => Effect.succeed(Failed.make({ params })),
+					Note: () => Loop.write(Effect.fail(new Down({ what: 'note' })))
+				})
+			});
+			expect(yield* Effect.flip(loop.join)).toEqual(new Down({ what: 'note' }));
+			expect(yield* loop.model).toEqual(Fetch.start);
+		})
+	);
+});
+
+describe('Loop settled', () => {
+	it.effect('gives the model at once when no command runs', () =>
+		Effect.gen(function* () {
+			const loop = yield* Loop.make(chat, {
+				init: { model: ready(2) },
+				handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave })
+			});
+			expect(yield* loop.settled).toEqual(ready(2));
+		})
+	);
+
+	it.effect('waits for every reply and the commands it leads to', () =>
+		Effect.gen(function* () {
+			const saved = yield* Ref.make(0);
+			const loop = yield* Loop.make(chat, {
+				init: { model: ready(2) },
+				handler: Command.match({
+					Ask: ({ turn }) =>
+						Effect.andThen(Effect.yieldNow, Effect.succeed(Answered.make({ turn, left: 1 }))),
+					SaveTurn: () =>
+						Effect.andThen(
+							Effect.yieldNow,
+							Ref.update(saved, (n) => n + 1)
+						)
+				})
+			});
+			yield* loop.dispatch(Asked.make({ turn: 't1', text: 'Why Effect?' }));
+			expect(yield* loop.settled).toEqual(
+				Chat.cases.Ready.make({
+					turns: [{ id: 't1', question: 'Why Effect?', answer: '' }],
+					left: 1
+				})
+			);
+			expect(yield* Ref.get(saved)).toBe(1);
+		})
+	);
+
+	it.effect('waits for the command a reply starts as it cancels its own', () =>
+		Effect.gen(function* () {
+			const noting = yield* Deferred.make<void>();
+			const release = yield* Deferred.make<void>();
+			const loop = yield* Loop.make(Fetch.fetch, {
+				init: { model: Fetch.start, commands: [fetching] },
+				handler: Fetch.Command.match({
+					// Fetched cancels this Fetch and starts Note.
+					Fetch: ({ params }) => Effect.succeed(Fetched.make({ params })),
+					Note: () => Effect.andThen(Deferred.succeed(noting, undefined), Deferred.await(release))
+				})
+			});
+			const waiting = yield* Effect.forkChild(loop.settled, { startImmediately: true });
+			yield* Deferred.await(noting);
+			yield* Effect.yieldNow;
+			expect(waiting.pollUnsafe()).toBeUndefined();
+			yield* Deferred.succeed(release, undefined);
+			expect(yield* Fiber.join(waiting)).toEqual({ attempts: 0, fetched: true });
+		})
+	);
+
+	it.effect('fails as soon as a command fails while another still runs', () =>
+		Effect.gen(function* () {
+			const { loop } = yield* writing({ fetch: '2' });
+			yield* loop.dispatch(Requested.make({ params: { page: '2' } }));
+			expect(yield* Effect.flip(loop.settled)).toEqual(new Down({ what: 'fetch' }));
+		})
+	);
+
+	it.effect('fails with a command that failed before it was awaited', () =>
+		Effect.gen(function* () {
+			const loop = yield* Loop.make(Fetch.fetch, {
+				init: { model: Fetch.start, commands: [fetching] },
+				handler: Fetch.Command.match({
+					Fetch: () => Effect.fail(new Down({ what: 'fetch' })),
+					Note: noSave
+				})
+			});
+			yield* Effect.yieldNow;
+			expect(yield* Effect.flip(loop.settled)).toEqual(new Down({ what: 'fetch' }));
+		})
+	);
+});
+
+describe('Loop.run', () => {
+	it.effect('dispatches its messages in order and gives the settled model', () =>
+		Effect.gen(function* () {
+			const applied: Array<string> = [];
+			const model = yield* Loop.run(
+				{
+					...Fetch.fetch,
+					update: (current: Fetch.Model, message: Fetch.Message) => {
+						applied.push(`${message._tag} ${message.params.page}`);
+						return Fetch.fetch.update(current, message);
+					}
+				},
+				{
+					init: { model: Fetch.start },
+					handler: Fetch.Command.match({
+						Fetch: ({ params }) => Effect.succeed(Fetched.make({ params })),
+						Note: noSave
+					}),
+					messages: [Failed.make({ params: page }), Requested.make({ params: { page: '2' } })]
+				}
+			);
+			expect(model).toEqual({ attempts: 1, fetched: true });
+			expect(applied.filter((entry) => !entry.startsWith('Fetched'))).toEqual([
+				'Failed 1',
+				'Requested 2'
+			]);
+		})
+	);
+
+	it.effect('runs its start alone without messages', () =>
+		Effect.gen(function* () {
+			const model = yield* Loop.run(Fetch.fetch, {
+				init: { model: Fetch.start, commands: [fetching] },
+				handler: Fetch.Command.match({
+					Fetch: ({ params }) => Effect.succeed(Fetched.make({ params })),
+					Note: noSave
+				})
+			});
+			expect(model).toEqual({ attempts: 0, fetched: true });
+		})
+	);
+
+	it.effect('fails with a command failure and interrupts the commands still running', () =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const interrupted = yield* Deferred.make<void>();
+			const failure = yield* Effect.flip(
+				Loop.run(Fetch.fetch, {
+					init: { model: Fetch.start, commands: [fetching] },
+					handler: Fetch.Command.match({
+						Fetch: ({ params }) =>
+							params.page === '1'
+								? hang(started, interrupted)
+								: Effect.fail(new Down({ what: 'fetch' })),
+						Note: noSave
+					}),
+					messages: [Requested.make({ params: { page: '2' } })]
+				})
+			);
+			expect(failure).toEqual(new Down({ what: 'fetch' }));
+			expect(yield* Deferred.isDone(interrupted)).toBe(true);
+		})
+	);
+
+	it.effect('dispatches no message after a command failed', () =>
+		Effect.gen(function* () {
+			const written: Array<string> = [];
+			const failure = yield* Effect.flip(
+				Loop.run(Fetch.fetch, {
+					init: { model: Fetch.start, commands: [fetching] },
+					handler: Fetch.Command.match({
+						Fetch: () => Effect.fail(new Down({ what: 'fetch' })),
+						Note: ({ text }) => Loop.write(Effect.sync(() => void written.push(text)))
+					}),
+					messages: [Fetched.make({ params: page }), Fetched.make({ params: page })]
+				})
+			);
+			expect(failure).toEqual(new Down({ what: 'fetch' }));
+			expect(written).toEqual([]);
+		})
+	);
+
+	it.effect('runs its commands in the span Loop.run', () =>
+		Effect.gen(function* () {
+			const spans: Array<string> = [];
+			yield* Loop.run(Fetch.fetch, {
+				init: { model: Fetch.start, commands: [fetching] },
+				handler: Fetch.Command.match({
+					Fetch: ({ params }) =>
+						Effect.map(Effect.currentSpan, (span) => {
+							spans.push(span.name);
+							return Fetched.make({ params });
+						}),
+					Note: noSave
+				})
+			});
+			expect(spans).toEqual(['Loop.run']);
 		})
 	);
 });
