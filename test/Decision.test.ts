@@ -478,6 +478,22 @@ describe('Decision', () => {
 			})
 		);
 
+		it.effect('a satisfies that changes the state the decision keeps', () =>
+			Effect.gen(function* () {
+				expect(
+					yield* failure(
+						Decision.make(
+							'satisfies',
+							membership,
+							given(none),
+							satisfies('touched', (current) => Boolean(Object.assign(current, { active: true }))),
+							state({ ...none, active: true })
+						)
+					)
+				).toMatchObject({ step: 2, problem: 'touched changed its input' });
+			})
+		);
+
 		it.effect('a decide that throws, mutates, drifts or gives invalid events', () =>
 			Effect.gen(function* () {
 				const throwing = variant(() => {

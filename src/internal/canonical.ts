@@ -55,6 +55,10 @@ export const tagger = <A>(schema: Schema.Codec<A, unknown>) => {
 		Option.map(Option.flatMap(Result.getSuccess(encode(value)), tagged), ({ tag }) => tag);
 };
 
+/** The line for a value that is not JSON: the reason, on one line. */
+export const notJson = (error: Schema.SchemaError) =>
+	`(not JSON: ${error.message.replaceAll(/\s+/g, ' ')})`;
+
 /**
  * Renders a value for a story line: a tagged value as `Tag {fields}`, anything else as JSON, and a
  * value that is not JSON as the reason.
@@ -63,7 +67,7 @@ export const describer = <A>(schema: Schema.Codec<A, unknown>) => {
 	const encode = encoder(schema);
 	return (value: A): string =>
 		Result.match(encode(value), {
-			onFailure: (error) => `(not JSON: ${error.message.replaceAll(/\s+/g, ' ')})`,
+			onFailure: notJson,
 			onSuccess: (json) =>
 				Option.match(tagged(json), {
 					onNone: () => JSON.stringify(json),

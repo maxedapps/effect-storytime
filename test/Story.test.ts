@@ -573,6 +573,46 @@ describe('Story', () => {
 				);
 			})
 		);
+
+		it.effect('an invariant or satisfies that changes the model the story keeps', () =>
+			Effect.gen(function* () {
+				const tampering = Program.make({
+					...Lamp.lamp,
+					invariants: { counted: (current) => Boolean(Object.assign(current, { count: 9 })) }
+				});
+				expect(yield* failure(Story.make('invariant', tampering, lamp.given(Lamp.off)))).toEqual(
+					expect.objectContaining({
+						step: 1,
+						problem: 'invariant counted changed its input',
+						expected: '{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}',
+						actual: '{"at":"2026-11-03T00:00:00.000Z","count":9,"on":0}'
+					})
+				);
+				const invalidating = Program.make({
+					...Lamp.lamp,
+					invariants: { dated: (current) => current.at.setTime(Number.NaN) !== 0 }
+				});
+				expect(
+					yield* failure(Story.make('unencodable', invalidating, lamp.given(Lamp.off)))
+				).toMatchObject({
+					step: 1,
+					problem: 'invariant dated changed its input',
+					actual: 'its input is not JSON: Expected a valid Date\n  at ["at"]'
+				});
+				// Without the check, the reset would make the story's model pass.
+				expect(
+					yield* failure(
+						Story.make(
+							'satisfies',
+							Lamp.lamp,
+							lamp.given(Lamp.off),
+							lamp.satisfies('reset', (current) => Boolean(Object.assign(current, { count: 5 }))),
+							lamp.model({ ...Lamp.off, count: 5 })
+						)
+					)
+				).toMatchObject({ step: 2, line: 'satisfies reset', problem: 'reset changed its input' });
+			})
+		);
 	});
 
 	describe('commands', () => {

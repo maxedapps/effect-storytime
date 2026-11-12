@@ -79,24 +79,66 @@ export const roundTrips = <A>(schema: Schema.Codec<A, unknown>, what: string) =>
 };
 
 /** Every check on one Schema's values, naming them `what` in each Problem. */
-export const role = <A>(schema: Schema.Codec<A, unknown>, what: string) => ({
-	valid: conforms(schema, what),
-	key: keyed(schema, what),
-	copy: roundTrips(schema, what),
-	show: describer(schema)
+export const role = <A>(schema: Schema.Codec<A, unknown>, what: string) => {
+	const key = keyed(schema, what);
+	const show = describer(schema);
+	return {
+		valid: conforms(schema, what),
+		key,
+		copy: roundTrips(schema, what),
+		show,
+		/** A `satisfies` step: `check`, which must leave the value alone, holds for it. */
+		satisfies: (value: A, label: string, check: (value: A) => boolean) =>
+			Effect.flatMap(
+				untouched(label, key(value), () => check(value)),
+				(ok) =>
+					ok
+						? Effect.void
+						: Effect.fail(
+								new Problem({ message: `${what} does not satisfy ${label}`, actual: show(value) })
+							)
+			)
+	};
+};
+
+/**
+ * Runs a callback that must leave its input alone: the input's JSON, taken right before and after
+ * the call, must not change, and an input the call left unencodable changed too. It detects a
+ * mutation rather than hiding it behind a copy.
+ */
+export const untouched = Effect.fnUntraced(function* <A>(
+	name: string,
+	input: Effect.Effect<string, Problem>,
+	run: () => A
+) {
+	const before = yield* input;
+	const result = yield* attempt(name, run);
+	const after = yield* input.pipe(Effect.catch((problem) => Effect.succeed(problem.message)));
+	if (after !== before) {
+		return yield* new Problem({
+			message: `${name} changed its input`,
+			expected: before,
+			actual: after
+		});
+	}
+	return result;
 });
 
-/** Checks every named predicate, an invariant or property, on a value; `kind` names it in a Problem. */
-export const holds =
-	<A>(
-		kind: 'invariant' | 'property',
-		predicates: Readonly<Record<string, (value: A) => boolean>>,
-		describe: (value: A) => string
-	) =>
-	(value: A) =>
+/**
+ * Checks every named predicate, an invariant or property, on a value of `schema`; `kind` names it
+ * in a Problem. A predicate must leave the value alone.
+ */
+export const holds = <A>(
+	kind: 'invariant' | 'property',
+	predicates: Readonly<Record<string, (value: A) => boolean>>,
+	schema: Schema.Codec<A, unknown>
+) => {
+	const key = keyed(schema, 'its input');
+	const describe = describer(schema);
+	return (value: A) =>
 		Effect.forEach(Object.entries(predicates), ([name, predicate]) =>
 			Effect.flatMap(
-				attempt(`${kind} ${name}`, () => predicate(value)),
+				untouched(`${kind} ${name}`, key(value), () => predicate(value)),
 				(ok) =>
 					ok
 						? Effect.void
@@ -105,6 +147,7 @@ export const holds =
 							)
 			)
 		).pipe(Effect.asVoid);
+};
 
 /**
  * Runs a pure callback twice. Its input's JSON must not change and both results' JSON, each taken
@@ -116,20 +159,10 @@ export const pure = Effect.fnUntraced(function* <A>(
 	run: () => A,
 	output: (result: A) => Effect.Effect<string, Problem>
 ) {
-	const before = yield* input;
-	const unchanged = Effect.flatMap(input, (after) =>
-		after === before
-			? Effect.void
-			: Effect.fail(
-					new Problem({ message: `${name} changed its input`, expected: before, actual: after })
-				)
-	);
-	const first = yield* attempt(name, run);
+	const first = yield* untouched(name, input, run);
 	const firstText = yield* output(first);
-	yield* unchanged;
-	const second = yield* attempt(name, run);
+	const second = yield* untouched(name, input, run);
 	const secondText = yield* output(second);
-	yield* unchanged;
 	if (firstText !== secondText) {
 		return yield* new Problem({
 			message: `${name} gave two results for the same input`,

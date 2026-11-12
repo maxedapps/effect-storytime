@@ -2,7 +2,7 @@
 
 ## Types
 
-- **`Message` or `Command` isn't a `Program.Cases`.** A Program's `Message` and `Command` must list their `cases`. A `Schema.TaggedStruct`, a `Schema.Union` of structs or a plain struct doesn't, so wrap it: `Schema.TaggedUnion({ Award: { ... } })`.
+- **`Message` or `Command` isn't a `Program.Cases`.** A Program's `Message` and `Command` must list their `cases`. A `Schema.TaggedStruct`, a `Schema.Union` of structs or a plain struct doesn't, so wrap it: `Schema.TaggedUnion({ Award: { ... } })`, or for `Schema.TaggedClass` cases `Schema.Union([Award, Revoke]).pipe(Schema.toTaggedUnion('_tag'))` ([domain-modelling.md](domain-modelling.md#rules-for-the-schemas)).
 - **A Store's error type.** `Decider.Store<Key, State, Event, E>` defaults `E` to `never`. A database Store names its errors, such as `SqlError.SqlError | Schema.SchemaError`, and `handle` and `Decision.against` pass them on.
 - **A handler failure the Program should decide on.** A handler's typed error fails its command and the run: map the failures the Program decides on (a missing account, a refusal) to messages, and let only the ones that end the process through.
 - **A handler, store and write with different error types.** `Loop.make` and `Loop.run` infer one `E` for all of them, the union of their errors.
@@ -10,11 +10,11 @@
 ## Failing tales
 
 - **`<fn> gave two results for the same input`.** The function read the clock, a random number or mutable state. Put the value into the command or message.
-- **`<fn> changed its input`.** The function mutated its argument, often with `push` or by assigning a field. Spread into a new value.
+- **`<fn> changed its input`.** The function mutated its argument, often with `push` or by assigning a field. Spread into a new value. Invariants, properties and `satisfies` checks fail the same way: they only read.
 - **`… changes through JSON`.** A Schema's encoding loses something its decoding can't restore, or a value holds something JSON can't carry, such as a class instance.
 - **Owed commands.** Every command `update` or `resume` produces must be asserted by `commands`, `resolve` or `emit` before a cancel or restart drops it and before the story ends. A command that answers with no message still needs `resolve(command)`.
 - **`commands(...)` lists all pending commands.** It requires exactly the pending set, so list every pending command, or write `commands()` for none.
-- **Identity is canonical JSON.** `resolve` and `emit` find a pending command by all of its fields, and a Program cancels by the full value. Two commands that differ in any field are different commands, and two identical commands are one.
+- **Identity is canonical JSON.** `resolve` and `emit` find a pending command by all of its fields, and a Program cancels by the full value. Two commands that differ in any field are different commands, and two identical commands are one: a story keeps one pending, and a Loop runs one. Put an operation id in a command that must run twice.
 - **`given` first and only once.** A second `given` fails. Use `restart()` to continue from a stored model, or write another tale.
 - **`anyOrder` takes 2 to 5 steps.** Group steps with `steps(...)` to move them as one.
 - **A `when` needs its outcome right after it.** `when(...)` must be followed by `accepted(...)` or `rejected(...)`.

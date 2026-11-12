@@ -7,7 +7,7 @@ import { Array as Arr, Data, Effect, Option, Ref, Result } from 'effect';
 import type { Context } from 'effect';
 import type { Decider, Store } from '../Decider.ts';
 import { describer } from '../internal/canonical.ts';
-import { attempt, Problem } from './internal/check.ts';
+import { Problem } from './internal/check.ts';
 import { caser, checks, strict } from './internal/decider.ts';
 import type { Decided } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from '../internal/transition.ts';
@@ -270,20 +270,7 @@ const tell = Effect.fnUntraced(function* <State, Command, Event, Rejection, E>(
 					State: ({ expected }) => Effect.as(same(expected, 'the state differs'), decided),
 					Satisfies: ({ label, check }) =>
 						Effect.as(
-							current((actual) =>
-								Effect.flatMap(
-									attempt(label, () => check(actual)),
-									(ok) =>
-										ok
-											? Effect.void
-											: Effect.fail(
-													new Problem({
-														message: `the state does not satisfy ${label}`,
-														actual: the.state.show(actual)
-													})
-												)
-								)
-							),
+							current((actual) => the.state.satisfies(actual, label, check)),
 							decided
 						)
 				});

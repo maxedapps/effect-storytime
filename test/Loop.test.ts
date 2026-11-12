@@ -3,6 +3,7 @@ import { Data, Deferred, Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream 
 import { Loop, Program } from 'effect-storytime';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
+import * as Lamp from './examples/lamp.ts';
 
 const { Asked, Delta, Answered, Refused, Stopped } = Message.cases;
 const { Ask } = Command.cases;
@@ -371,6 +372,90 @@ describe('Loop', () => {
 				})
 			);
 			expect(log).toEqual(['store Asking', 'store Ready']);
+		})
+	);
+
+	it.effect('dies on an invariant that changes the model and keeps, saves and starts nothing', () =>
+		Effect.gen(function* () {
+			const log: Array<string> = [];
+			const tampering = Program.make({
+				...chat,
+				invariants: {
+					stays: (model) => !Chat.guards.Ready(model) || Boolean(Object.assign(model, { left: 0 }))
+				}
+			});
+			const loop = yield* Loop.make(tampering, {
+				init: { model: asking },
+				handler: Command.match({
+					Ask: () => Effect.never,
+					SaveTurn: noSave
+				}),
+				store: stored<Chat>(Effect.succeedNone, (model) =>
+					Effect.sync(() => void log.push(`store ${model._tag}`))
+				)
+			});
+			const defect = yield* loop
+				.dispatch(Answered.make({ turn: 't1', left: 1 }))
+				.pipe(Effect.catchDefect(Effect.succeed));
+			expect(defect).toEqual(
+				new Program.InvariantChanged({
+					invariant: 'stays',
+					before:
+						'{"_tag":"Ready","left":1,"turns":[{"answer":"","id":"t1","question":"Why Effect?"}]}',
+					after:
+						'{"_tag":"Ready","left":0,"turns":[{"answer":"","id":"t1","question":"Why Effect?"}]}'
+				})
+			);
+			expect(yield* loop.model).toEqual(asking);
+			expect(log).toEqual(['store Asking']);
+		})
+	);
+
+	it.effect('dies on an invariant that leaves the model unencodable', () =>
+		Effect.gen(function* () {
+			const defect = yield* Loop.make(
+				Program.make({
+					...Lamp.lamp,
+					invariants: { dated: (current) => current.at.setTime(Number.NaN) !== 0 }
+				}),
+				{ init: { model: Lamp.off }, handler: () => Effect.void }
+			).pipe(Effect.catchDefect(Effect.succeed));
+			expect(defect).toEqual(
+				new Program.InvariantChanged({
+					invariant: 'dated',
+					before: '{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}',
+					after: '(not JSON: Expected a valid Date at ["at"])'
+				})
+			);
+		})
+	);
+
+	it.effect('runs identical commands of one transition once, as a story shows them', () =>
+		Effect.gen(function* () {
+			const written: Array<string> = [];
+			let fetches = 0;
+			yield* Loop.run(Fetch.fetch, {
+				init: {
+					model: Fetch.start,
+					commands: [
+						Note.make({ text: 'a' }),
+						fetching,
+						Note.make({ text: 'b' }),
+						Note.make({ text: 'a' }),
+						fetching
+					]
+				},
+				handler: Fetch.Command.match({
+					Fetch: ({ params }) =>
+						Effect.sync(() => {
+							fetches += 1;
+							return Fetched.make({ params });
+						}),
+					Note: ({ text }) => Loop.write(Effect.sync(() => void written.push(text)))
+				})
+			});
+			expect(written).toEqual(['a', 'b', 'fetched']);
+			expect(fetches).toBe(1);
 		})
 	);
 

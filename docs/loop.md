@@ -78,7 +78,7 @@ const answered = yield* loop.settled;
 
 ## How commands run
 
-- A command fiber is keyed by the command's canonical JSON. A command identical to a running one interrupts and replaces it.
+- A command is identified by its canonical JSON, as in a story. Identical commands in one transition are one: a write runs once and work starts once, where the command first appears. A command fiber is keyed the same way, so a command identical to a running one interrupts and replaces it.
 - `cancels` interrupts a running command once the transition's new commands have started, so `settled` sees no idle moment between a reply that cancels its own command and the command it leads to. A message the cancelled command had already sent but the Loop hadn't applied yet is dropped, and so is a message from a replaced command.
 - Command fibers only enqueue their messages, and the Loop applies them one at a time in order. A command whose own message cancels it never cuts an `update` short.
 - A command that fails or dies ends its own fiber; the Loop keeps applying messages. `settled`, `join` and `run` report it, so await one of them, or race `join` with your app's main fiber.
@@ -144,7 +144,7 @@ Writes work without a store too: they then run in order before the model is publ
 
 ## Invariants
 
-A Loop checks the Program's invariants on every model `init`, `resume` or `update` gives, before it saves that model, runs its writes, publishes it to `model` and `changes`, or starts and cancels its commands, as a story does at the same step. A model that breaks one is a bug in the Program, so the Loop changes nothing and the step dies with the defect `Program.InvariantBroken { invariant, state }`, its message `invariant <name> does not hold for <model>`:
+A Loop checks the Program's invariants on every model `init`, `resume` or `update` gives, before it saves that model, runs its writes, publishes it to `model` and `changes`, or starts and cancels its commands, as a story does at the same step. A model that breaks one is a bug in the Program, so the Loop changes nothing and the step dies with the defect `Program.InvariantBroken { invariant, state }`, its message `invariant <name> does not hold for <model>`. An invariant must only read the model: one that changes it dies the same way with `Program.InvariantChanged { invariant, before, after }`, the model's canonical JSON before and after it ran:
 
 - from `Loop.make` or `Loop.run`, when `init` or `resume` gives it,
 - from `dispatch`, when the dispatched message's `update` gives it,

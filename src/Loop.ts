@@ -18,7 +18,7 @@ import {
 	Stream,
 	SubscriptionRef
 } from 'effect';
-import { describer, stringifier } from './internal/canonical.ts';
+import { stringifier } from './internal/canonical.ts';
 import { enforce } from './internal/invariants.ts';
 import type { Next, Program, Tagged } from './Program.ts';
 
@@ -111,10 +111,10 @@ interface Delivery<Message, E> {
 	readonly live: Effect.Effect<boolean>;
 }
 
-/** A committed transition: its Next and the work it starts. */
+/** A committed transition: its Next and the work it starts, keyed by its command. */
 interface Committed<Model, Message, Command, E, R> {
 	readonly next: Next<Model, Command>;
-	readonly work: ReadonlyArray<readonly [Command, Work<Message, E, R>]>;
+	readonly work: ReadonlyMap<string, Work<Message, E, R>>;
 }
 
 /**
@@ -139,7 +139,7 @@ export const make = Effect.fnUntraced(function* <
 	const { handler, store } = options;
 	const context = yield* Effect.context<R>();
 	const keyOf = stringifier(program.Command);
-	const holds = enforce(program.invariants, describer(program.Model));
+	const holds = enforce(program.invariants, program.Model);
 	const transaction: Store<Model, E, R>['transaction'] = store
 		? store.transaction
 		: (effect) => effect;
@@ -152,11 +152,13 @@ export const make = Effect.fnUntraced(function* <
 	const commit = Effect.fnUntraced(function* (next: Next<Model, Command>) {
 		yield* holds(next.model);
 		if (store) yield* store.save(next.model);
-		const work: Array<readonly [Command, Work<Message, E, R>]> = [];
-		for (const command of next.commands ?? []) {
+		// Identical commands are one, as in a story: each runs once, where it first appears.
+		const commands = new Map((next.commands ?? []).map((command) => [keyOf(command), command]));
+		const work = new Map<string, Work<Message, E, R>>();
+		for (const [key, command] of commands) {
 			const output = handler(command);
 			if (output instanceof Write) yield* output.effect;
-			else work.push([command, output]);
+			else work.set(key, output);
 		}
 		return { next, work } satisfies Committed<Model, Message, Command, E, R>;
 	});
@@ -196,15 +198,10 @@ export const make = Effect.fnUntraced(function* <
 		// The new commands start before the cancelled ones stop, so the map empties only once the
 		// process is idle, even when a reply cancels its own command. A key both cancelled and
 		// started is replaced by its new fiber.
-		const started = new Set<string>();
-		for (const [command, output] of work) {
-			const key = keyOf(command);
-			started.add(key);
-			yield* FiberMap.run(fibers, key, run(output, key));
-		}
+		for (const [key, output] of work) yield* FiberMap.run(fibers, key, run(output, key));
 		for (const command of next.cancels ?? []) {
 			const key = keyOf(command);
-			if (!started.has(key)) yield* FiberMap.remove(fibers, key);
+			if (!work.has(key)) yield* FiberMap.remove(fibers, key);
 		}
 	}, Effect.provideContext(context));
 

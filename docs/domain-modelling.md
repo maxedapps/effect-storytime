@@ -34,17 +34,57 @@ A Program never changes a Decider's state directly. It asks with a command, and 
 
 ## Rules for the Schemas
 
-- `Command`, `Event` and `Rejection` of a Decider, and `Message` and `Command` of a Program, should be `Schema.TaggedUnion`s. A Program requires them to be: its `Message` and `Command` must list their `cases`, which `Schema.TaggedUnion` does and `Schema.TaggedStruct` alone does not. A single-case union is fine (`Schema.TaggedUnion({ Award: { ... } })`).
+- `Command`, `Event` and `Rejection` of a Decider, and `Message` and `Command` of a Program, should be `Schema.TaggedUnion`s. A Program requires them to be: its `Message` and `Command` must list their `cases`, which `Schema.TaggedUnion` does and `Schema.TaggedStruct` alone does not. A single-case union is fine (`Schema.TaggedUnion({ Award: { ... } })`). Cases that are classes (`Schema.TaggedClass`) work too: `Schema.Union([...classes]).pipe(Schema.toTaggedUnion('_tag'))` gives the same `cases`, `match` and `guards`.
 - A Program's `Model` and a Decider's `State` may be any Schema. When one is a tagged union, its cases count towards coverage (`Model.Ready`, `State.Active`). A struct has no cases.
 - Use the union's own tools: `Command.cases.Grant.make({...})` to build a value, `Command.match(value, {...})` or `Command.match({...})` for exhaustive handling, and `Command.guards.Grant(value)` to test one case. Don't compare `_tag` by hand or write `{ _tag: 'Grant', ... }` literals.
-- Every value must survive a JSON round trip through its Schema unchanged, because tales copy every value that way and a Store usually does too. Prefer encodable types (`Schema.Int`, `Schema.NonEmptyString`, `Schema.BooleanFromBit`, ISO date strings) over class instances or functions.
+- Every value must survive a JSON round trip through its Schema unchanged, because tales copy every value that way and a Store usually does too. Prefer encodable types (`Schema.Int`, `Schema.NonEmptyString`, `Schema.BooleanFromBit`, ISO date strings) over functions or instances of classes that aren't Schemas. Schema classes (`Schema.Class`, `Schema.TaggedClass`) are encodable and come back as instances.
+
+A Program on `Schema.TaggedClass` cases:
+
+<!-- snippet: test/docs/classes.test.ts#classes -->
+```ts
+class Enrol extends Schema.TaggedClass<Enrol>()('Enrol', { learner: Schema.String }) {}
+class Leave extends Schema.TaggedClass<Leave>()('Leave', { learner: Schema.String }) {}
+class Welcome extends Schema.TaggedClass<Welcome>()('Welcome', { learner: Schema.String }) {}
+
+// A union of classes lists its cases, so a Program takes it as it takes a Schema.TaggedUnion.
+const Message = Schema.Union([Enrol, Leave]).pipe(Schema.toTaggedUnion('_tag'));
+const Command = Schema.Union([Welcome]).pipe(Schema.toTaggedUnion('_tag'));
+
+const roster = Program.make({
+	Model: Schema.Struct({ learners: Schema.Array(Schema.String) }),
+	Message,
+	Command,
+	update: (model, message) =>
+		Message.match(message, {
+			Enrol: ({ learner }) => ({
+				model: { learners: [...model.learners, learner] },
+				commands: [new Welcome({ learner })]
+			}),
+			Leave: ({ learner }) => ({
+				model: { learners: model.learners.filter((name) => name !== learner) }
+			})
+		})
+});
+
+const story = Story.of(roster);
+const enrols = Story.make(
+	'a learner enrols and leaves',
+	roster,
+	story.given({ learners: [] }),
+	story.send(new Enrol({ learner: 'ada' })),
+	story.resolve(new Welcome({ learner: 'ada' })),
+	story.send(new Leave({ learner: 'ada' })),
+	story.model({ learners: [] })
+);
+```
 
 ## Rules for the functions
 
 `decide`, `evolve`, `update` and `resume` are pure. They read only their arguments and return new values:
 
 - No `Date.now()`, `Math.random()`, `crypto.randomUUID()` or reads of mutable module state. Put the time or id into the command or message (`Grant.make({ source, at })`).
-- No mutation of the state, model, command or message they get. Spread instead: `{ ...state, active: true }`.
+- No mutation of the state, model, command or message they get. Spread instead: `{ ...state, active: true }`. Invariants, properties and `satisfies` checks only read theirs too.
 - No effects. `decide` decides from the state the transaction loaded and the command alone. When a decision needs outside data, the caller reads it first and puts it into the command, or a Program fetches it with a command and sends it on as a message.
 
 Every tale runs each function twice and checks that it changed nothing ([strict-rules.md](strict-rules.md)), so a test catches a function that breaks them.

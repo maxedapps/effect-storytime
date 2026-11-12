@@ -165,7 +165,7 @@ The model is the only memory: whatever `resume` needs must be in the model. A st
 
 ## Invariants
 
-A Program's invariants are checked on the starting model and on every model `update` or `resume` gives: after each step of every story and explored path, and in a Loop before it saves, publishes or starts anything for that model ([loop.md](loop.md#invariants)). A model that breaks one is a bug in the Program: a tale fails with `invariant <name> does not hold`, and a Loop dies with the defect `Program.InvariantBroken`.
+A Program's invariants are checked on the starting model and on every model `update` or `resume` gives: after each step of every story and explored path, and in a Loop before it saves, publishes or starts anything for that model ([loop.md](loop.md#invariants)). A model that breaks one is a bug in the Program: a tale fails with `invariant <name> does not hold`, and a Loop dies with the defect `Program.InvariantBroken`. An invariant only reads the model: one that changes it fails a tale with `invariant <name> changed its input`, and a Loop dies with `Program.InvariantChanged`.
 
 ## API
 
@@ -179,3 +179,4 @@ A Program's invariants are checked on the starting model and on every model `upd
 | `Tagged` | interface | `{ readonly _tag: string }`. |
 | `Invariants<Model>` | type | `Readonly<Record<string, (model: Model) => boolean>>`, shared with Deciders. |
 | `InvariantBroken` | `Schema.TaggedError` | The defect a Loop or `Decider.handle` dies with: `{ invariant, state }`, message `invariant <name> does not hold for <state>`. |
+| `InvariantChanged` | `Schema.TaggedError` | The defect a Loop or `Decider.handle` dies with when an invariant changes the model or state: `{ invariant, before, after }` in canonical JSON, message `invariant <name> changed <before> to <after>`. |

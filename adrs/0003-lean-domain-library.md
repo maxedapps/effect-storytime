@@ -13,7 +13,7 @@ Infinite runs its database rules on Deciders and its UI and workflow state on Pr
 
 ## Decision
 
-1. **Decider is the command side, Program the process manager.** An aggregate is a Decider plus a Store whose transaction protects everything `decide` read: a consistency boundary, not a class or a row. No Aggregate, Policy, Saga, Projection or Repository types, no event store and no effectful `decide`. Value objects (Schema brands and checks), ports (`Context.Service` + `Layer`), sagas (effect/workflow) and agent tools (effect/ai) stay plain Effect. Alchemy's `@alchemy.run/domain` is a reference only.
+1. **Decider is the command side, Program the process manager.** An aggregate is a Decider plus a Store whose transaction protects everything `decide` read: a consistency boundary, not a class or a row. No Aggregate, Policy, Saga, Projection or Repository types, no event store and no effectful `decide`. Value objects (Schema brands and checks), ports (`Context.Service` + `Layer`), sagas (effect/workflow) and agent tools (effect/ai) stay plain Effect.
 2. **`Input` becomes `Command`** on the Decider, its decisions, explorations and cases (`Command.X`). The story record's `version` becomes 2.
 3. **One transition for runtime and tales.** `internal/transition.ts` decides, folds the events into every state they pass through and checks the invariants on the state reached. `handle` runs it with the plain callbacks; tales run it with the strict ones (validity, purity, JSON copies). A broken invariant in `handle` dies with `Decider.InvariantBroken` inside the transaction, so nothing is saved.
 4. **`handle` resolves after the commit with `{ events, state }`**, the state the events reached (the loaded state when there are none).

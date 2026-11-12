@@ -353,6 +353,18 @@ describe('Exploration', () => {
 		})
 	);
 
+	it.effect('fails a property that changes the model a path keeps', () =>
+		Effect.gen(function* () {
+			const tampering = Exploration.make('tampers', Lamp.variant(Lamp.lamp.update), {
+				given: off,
+				send: switches,
+				properties: { resets: ({ after }) => Boolean(Object.assign(after, { count: 0 })) }
+			});
+			const failure = yield* Effect.flip(Exploration.check(tampering));
+			expect(failure.problem).toBe('property resets changed its input');
+		})
+	);
+
 	it.effect('checks properties on every update a path runs, answers included', () =>
 		Effect.gen(function* () {
 			const explored = yield* Exploration.check(

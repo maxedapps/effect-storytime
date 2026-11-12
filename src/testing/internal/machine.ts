@@ -4,8 +4,8 @@
  */
 import { Effect, identity, Option, Schema } from 'effect';
 import type { Next, Program, Tagged } from '../../Program.ts';
-import { describer, tagger } from '../../internal/canonical.ts';
-import { attempt, holds, Problem, pure, role } from './check.ts';
+import { tagger } from '../../internal/canonical.ts';
+import { holds, Problem, pure, role } from './check.ts';
 
 interface Pending<Command> {
 	readonly key: string;
@@ -47,19 +47,17 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		message: role(program.Message, 'the message'),
 		command: role(program.Command, 'the command')
 	};
-	const invariants = holds('invariant', program.invariants, the.model.show);
+	const invariants = holds('invariant', program.invariants, program.Model);
 	const updates = holds(
 		'property',
 		properties,
-		describer(
-			Schema.Struct({
-				before: program.Model,
-				message: program.Message,
-				after: program.Model,
-				commands: Schema.Array(program.Command),
-				cancels: Schema.Array(program.Command)
-			})
-		)
+		Schema.Struct({
+			before: program.Model,
+			message: program.Message,
+			after: program.Model,
+			commands: Schema.Array(program.Command),
+			cancels: Schema.Array(program.Command)
+		})
 	);
 	const modelTag = tagger(program.Model);
 	const modelCase = (value: Model) =>
@@ -194,18 +192,7 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		}),
 
 		satisfies: (state: State<Model, Command>, label: string, check: (model: Model) => boolean) =>
-			Effect.flatMap(
-				attempt(label, () => check(state.model)),
-				(ok) =>
-					ok
-						? Effect.succeed(state)
-						: Effect.fail(
-								new Problem({
-									message: `the model does not satisfy ${label}`,
-									actual: the.model.show(state.model)
-								})
-							)
-			),
+			Effect.as(the.model.satisfies(state.model, label, check), state),
 
 		commands: Effect.fnUntraced(function* (
 			state: State<Model, Command>,

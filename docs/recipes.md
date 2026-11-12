@@ -118,16 +118,11 @@ const once = Decision.make(
 
 ### Running it
 
-The handler calls `Decider.handle` for each `Award`. `AlreadyEarned` means an earlier run already awarded the badge, perhaps one a crash cut short, so the handler treats it as done. With a `store`, the Loop saves the model before it starts the award, so the next process finds the award pending, sends it again, and `Loop.run` returns once it is done:
+The handler calls `Decider.handle` for each `Award`. `AlreadyEarned` means an earlier run already awarded the badge, perhaps one a crash cut short, so the handler treats it as done:
 
-<!-- snippet: test/docs/awarding.test.ts#loop -->
+<!-- snippet: test/docs/awarding.test.ts#handler -->
 ```ts
-const stored = yield* Ref.make(Option.none<Awarding>());
-const store: Loop.Store<Awarding, never, never> = {
-	load: Ref.get(stored),
-	save: (model) => Ref.set(stored, Option.some(model)),
-	transaction: (effect) => effect
-};
+// The production handler: each award goes through the badges Decider on its Store.
 const award = Decider.handle(badges, Badges);
 const handler = Command.match({
 	Award: ({ learner, badge }) =>
@@ -137,26 +132,71 @@ const handler = Command.match({
 			Effect.as(Awarded.make({ learner, badge }))
 		)
 });
+```
 
-// A process that crashes while the award runs: its scope closes and interrupts it.
+### Testing it end to end
+
+A Loop test runs the whole process with the production handler: the Program, the Loop, the Decider on an in-memory Store and the reply. `Loop.run` dispatches the message and returns once no command runs, so the test checks the model and the Store after it:
+
+<!-- snippet: test/docs/awarding.test.ts#run -->
+```ts
+// The message goes in, the award runs through `Decider.handle`, its reply settles the model.
+const model = yield* Loop.run(awarding, {
+	init: { model: { pending: [] } },
+	handler,
+	messages: [LecturesCompleted.make({ learner: 'ada', total: 1 })]
+});
+expect(model).toEqual({ pending: [] });
+const earned = yield* Badges;
+expect(yield* earned.load('ada')).toEqual(Option.some({ badges: ['first-lecture'] }));
+```
+
+### Testing a crash
+
+The crash that matters most comes after the Decider committed and before its reply reached the Loop. The test's crashing process wraps the handler so it commits, then hangs until its scope closes. With a `store`, the Loop saved the model before it started the award, so the next process finds the award pending, `resume` sends it again, and the Decider rejects the duplicate:
+
+<!-- snippet: test/docs/awarding.test.ts#crash -->
+```ts
+const stored = yield* Ref.make(Option.none<Awarding>());
+const store: Loop.Store<Awarding, never, never> = {
+	load: Ref.get(stored),
+	save: (model) => Ref.set(stored, Option.some(model)),
+	transaction: (effect) => effect
+};
+
+// A process that crashes mid-command: the Decider committed the award, then the scope
+// closes before the reply reaches the Loop.
+const committed = yield* Deferred.make<void>();
 yield* Effect.scoped(
 	Effect.gen(function* () {
 		const crashing = yield* Loop.make(awarding, {
 			init: { model: { pending: [] } },
-			handler: () => Effect.never,
+			handler: (command) =>
+				handler(command).pipe(
+					Effect.andThen(Deferred.succeed(committed, undefined)),
+					Effect.andThen(Effect.never)
+				),
 			store
 		});
-		yield* crashing.dispatch(LecturesCompleted.make({ learner: 'ada', total: 1 }));
+		yield* crashing.dispatch(LecturesCompleted.make({ learner: 'bo', total: 1 }));
+		yield* Deferred.await(committed);
 	})
 );
+expect(yield* Ref.get(stored)).toEqual(
+	Option.some({ pending: [Award.make({ learner: 'bo', badge: 'first-lecture' })] })
+);
 
-// The next process resumes the stored model, `resume` sends the award again, and the run
-// ends once it is done.
+// The next process resumes the stored model and `resume` reissues the award. The Decider
+// rejects the duplicate, the handler takes `AlreadyEarned` as done, and the run ends.
 const recovered = yield* Loop.run(awarding, {
 	init: { model: { pending: [] } },
 	handler,
 	store
 });
+expect(recovered).toEqual({ pending: [] });
+// Earned once: the reissued award was rejected, not applied again.
+const earned = yield* Badges;
+expect(yield* earned.load('bo')).toEqual(Option.some({ badges: ['first-lecture'] }));
 ```
 
 The gap this doesn't close is a message that never reached the Loop ([domain-modelling.md](domain-modelling.md#state-is-the-truth)).

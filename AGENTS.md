@@ -4,7 +4,7 @@ A lean Effect 4 domain library with strict story tests (README.md). Design decis
 
 ## Gate
 
-`pnpm check` must pass before anything lands: oxfmt, oxlint (type-aware, anti-slop vendored in `tools/oxlint`), tsc 7, Vitest at 100% coverage, Stryker at a 100% mutation score, then the build. It takes about two minutes.
+`pnpm check` must pass before anything lands: oxfmt, oxlint (type-aware, anti-slop vendored in `tools/oxlint`), tsc 7, Vitest at 100% coverage, Stryker at a 100% mutation score, then the build. It takes about two minutes, and CI (`.github/workflows/check.yml`) runs it on every push to `main` and every pull request.
 
 - While iterating, mutate only what changed: `pnpm stryker run --mutate src/<File>.ts`.
 - A surviving mutant needs a test that fails on it. Only a mutant that is truly equivalent gets `// Stryker disable next-line <Mutator>: <why no test can tell>`.

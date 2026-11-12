@@ -6,7 +6,7 @@
  */
 import { Effect, Option, Result, Schema } from 'effect';
 import type { Decider } from '../../Decider.ts';
-import { describer, tagger } from '../../internal/canonical.ts';
+import { tagger } from '../../internal/canonical.ts';
 import { holds, pure, role } from './check.ts';
 import type { Problem } from './check.ts';
 import { transition } from '../../internal/transition.ts';
@@ -71,18 +71,16 @@ export const strict = <State, Command, Event, Rejection>(
 	> = {}
 ) => {
 	const the = checks(decider);
-	const invariants = holds('invariant', decider.invariants, the.state.show);
+	const invariants = holds('invariant', decider.invariants, decider.State);
 	const rulings = holds(
 		'property',
 		properties,
-		describer(
-			Schema.Struct({
-				before: decider.State,
-				command: decider.Command,
-				decided: Schema.Result(Schema.Array(decider.Event), decider.Rejection),
-				after: decider.State
-			})
-		)
+		Schema.Struct({
+			before: decider.State,
+			command: decider.Command,
+			decided: Schema.Result(Schema.Array(decider.Event), decider.Rejection),
+			after: decider.State
+		})
 	);
 	const check = Effect.fnUntraced(function* (current: State) {
 		yield* the.state.valid(current);

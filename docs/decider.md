@@ -130,7 +130,7 @@ expect(again).toBe(`active since ${at}`);
 
 ### A broken invariant
 
-A state that breaks an invariant is a bug in `decide` or `evolve`, so `handle` dies with the defect `Program.InvariantBroken { invariant, state }` inside the transaction, and nothing is saved. Programs and Deciders share this one defect. `state` is the state as a line, in canonical JSON. Tales catch this before it reaches `handle` ([strict-rules.md](strict-rules.md)).
+A state that breaks an invariant is a bug in `decide` or `evolve`, so `handle` dies with the defect `Program.InvariantBroken { invariant, state }` inside the transaction, and nothing is saved. Programs and Deciders share this one defect. `state` is the state as a line, in canonical JSON. An invariant that changes the state it judges dies the same way with `Program.InvariantChanged { invariant, before, after }`. Tales catch this before it reaches `handle` ([strict-rules.md](strict-rules.md)).
 
 <!-- snippet: test/docs/membership.test.ts#invariant -->
 ```ts

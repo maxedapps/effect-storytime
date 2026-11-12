@@ -112,4 +112,28 @@ describe('Decider.handle', () => {
 			expect(yield* (yield* Memberships).log).toEqual(['begin', 'load u1']);
 		}).pipe(Effect.provide(Memberships.layer))
 	);
+
+	it.effect('dies with the invariant that changed the state before saving', () =>
+		Effect.gen(function* () {
+			const tampering = Decider.make({
+				...membership,
+				invariants: { touches: (current) => Boolean(Object.assign(current, { active: false })) }
+			});
+			const defect = yield* Decider.handle(tampering, Memberships)(
+				'u1',
+				Grant.make({ source: 'teachable', at })
+			).pipe(Effect.catchDefect(Effect.succeed));
+			const changed = new Program.InvariantChanged({
+				invariant: 'touches',
+				before: `{"active":1,"checkedAt":"${at}","source":"teachable"}`,
+				after: `{"active":0,"checkedAt":"${at}","source":"teachable"}`
+			});
+			expect(defect).toEqual(changed);
+			expect(changed._tag).toBe('InvariantChanged');
+			expect(changed.message).toBe(
+				`invariant touches changed ${changed.before} to ${changed.after}`
+			);
+			expect(yield* (yield* Memberships).log).toEqual(['begin', 'load u1']);
+		}).pipe(Effect.provide(Memberships.layer))
+	);
 });

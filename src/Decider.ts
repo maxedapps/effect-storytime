@@ -6,7 +6,6 @@
  */
 import { Effect } from 'effect';
 import type { Context, Option, Result, Schema } from 'effect';
-import { describer } from './internal/canonical.ts';
 import { enforce } from './internal/invariants.ts';
 import { decideIn, transition } from './internal/transition.ts';
 import type { Invariants } from './Program.ts';
@@ -83,7 +82,7 @@ export const handle = <State, Command, Event, Rejection, Id, Key, E>(
 	const rule = transition<State, Command, Event, Rejection, never>({
 		decide: (state, command) => Effect.sync(() => decider.decide(state, command)),
 		evolve: (state, event) => Effect.sync(() => decider.evolve(state, event)),
-		holds: enforce(decider.invariants, describer(decider.State))
+		holds: enforce(decider.invariants, decider.State)
 	});
 	return Effect.fn('Decider.handle')(function* (
 		key: Key,

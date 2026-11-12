@@ -42,6 +42,21 @@ export class InvariantBroken extends Schema.TaggedError<InvariantBroken>()('Inva
 	}
 }
 
+/**
+ * The defect a Loop or `Decider.handle` dies with when an invariant changes the model or state it
+ * checks, which must leave it alone. It dies before anything is saved, published or started.
+ */
+export class InvariantChanged extends Schema.TaggedError<InvariantChanged>()('InvariantChanged', {
+	invariant: Schema.String,
+	/** The model or state's canonical JSON before and after the invariant ran. */
+	before: Schema.String,
+	after: Schema.String
+}) {
+	override get message() {
+		return `invariant ${this.invariant} changed ${this.before} to ${this.after}`;
+	}
+}
+
 export interface Program<Model, Message extends Tagged, Command extends Tagged> {
 	readonly Model: Schema.Codec<Model, unknown>;
 	readonly Message: Cases<Message>;
