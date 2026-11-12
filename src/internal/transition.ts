@@ -5,6 +5,7 @@
  */
 import { Effect, Option, Result } from 'effect';
 import type { Decider, Store } from '../Decider.ts';
+import type { Tagged } from '../Program.ts';
 
 /** What a command gave, events or a rejection, and the states its events reached. */
 export interface Transition<State, Event, Rejection> {
@@ -24,6 +25,17 @@ export interface Steps<State, Command, Event, Rejection, X> {
 	readonly evolve: (state: State, event: Event) => Effect.Effect<State, X>;
 	readonly holds: (state: State) => Effect.Effect<void, X>;
 }
+
+/** A command's tag, typed as the tag of its own case, which picks that case's handler. */
+const tagOf = <Command extends Tagged>(command: Command): Command['_tag'] => command._tag;
+
+/** A Decider's `decide` as one function: each command goes to the handler of its tag. */
+export const decideBy =
+	<State, Command extends Tagged, Event, Rejection>(
+		decider: Decider<State, Command, Event, Rejection>
+	) =>
+	(state: State, command: Command): Result.Result<ReadonlyArray<Event>, Rejection> =>
+		decider.decide[tagOf(command)](state, command);
 
 /** Decides a command and folds its events; the invariants must hold once they are all applied. */
 export const transition = <State, Command, Event, Rejection, X>(
@@ -48,7 +60,7 @@ export const transition = <State, Command, Event, Rejection, X>(
 	});
 
 /** Loads the state under `key`, or the Decider's `initial` when nothing was saved. */
-export const loadOrInitial = <State, Command, Event, Rejection, Key, E>(
+export const loadOrInitial = <State, Command extends Tagged, Event, Rejection, Key, E>(
 	decider: Decider<State, Command, Event, Rejection>,
 	store: Store<Key, State, Event, E>,
 	key: Key
@@ -62,7 +74,7 @@ export const loadOrInitial = <State, Command, Event, Rejection, Key, E>(
  * Loads, transitions and saves (only when there are events) in one transaction of `store`. `rule`
  * is the plain transition for `handle` and the strictly checked one for `Decision.against`.
  */
-export const decideIn = <State, Command, Event, Rejection, Key, E, X>(
+export const decideIn = <State, Command extends Tagged, Event, Rejection, Key, E, X>(
 	decider: Decider<State, Command, Event, Rejection>,
 	store: Store<Key, State, Event, E>,
 	rule: (state: State, command: Command) => Effect.Effect<Transition<State, Event, Rejection>, X>

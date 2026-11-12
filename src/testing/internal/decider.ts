@@ -7,9 +7,10 @@
 import { Effect, Option, Result, Schema } from 'effect';
 import type { Decider } from '../../Decider.ts';
 import { tagger } from '../../internal/canonical.ts';
+import type { Tagged } from '../../Program.ts';
 import { holds, pure, role } from './check.ts';
 import type { Problem } from './check.ts';
-import { transition } from '../../internal/transition.ts';
+import { decideBy, transition } from '../../internal/transition.ts';
 import type { Transition } from '../../internal/transition.ts';
 
 export type Decided<Event, Rejection> = Result.Result<ReadonlyArray<Event>, Rejection>;
@@ -23,7 +24,7 @@ export interface Ruling<State, Command, Event, Rejection> {
 }
 
 /** The checks on a Decider's Schemas. */
-export const checks = <State, Command, Event, Rejection>(
+export const checks = <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>
 ) => ({
 	state: role(decider.State, 'the state'),
@@ -43,7 +44,7 @@ const caseIn = <A>(schema: Schema.Codec<A, unknown>, name: string) => {
 };
 
 /** The cases a state, a command and what it gave touch. */
-export const caser = <State, Command, Event, Rejection>(
+export const caser = <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>
 ) => {
 	const state = caseIn(decider.State, 'State');
@@ -64,7 +65,7 @@ export const caser = <State, Command, Event, Rejection>(
 };
 
 /** The strict rules of `decider`; explored paths check their `properties` on every ruling too. */
-export const strict = <State, Command, Event, Rejection>(
+export const strict = <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>,
 	properties: Readonly<
 		Record<string, (ruling: Ruling<State, Command, Event, Rejection>) => boolean>
@@ -106,13 +107,14 @@ export const strict = <State, Command, Event, Rejection>(
 				)
 		});
 
+	const decide = decideBy(decider);
 	const checked = transition<State, Command, Event, Rejection, Problem>({
 		decide: (current, command) =>
 			Effect.flatMap(
 				pure(
 					'decide',
 					joined([the.state.key(current), the.command.key(command)]),
-					() => decider.decide(current, command),
+					() => decide(current, command),
 					output
 				),
 				(decided) =>

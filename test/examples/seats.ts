@@ -27,18 +27,17 @@ export const seats = Decider.make({
 	Event,
 	Rejection,
 	initial: { capacity: 2, guests: [] },
-	decide: (state, command) =>
-		Command.match(command, {
-			Book: ({ guest }) => {
-				if (state.guests.includes(guest)) return Result.fail(AlreadyBooked.make({ guest }));
-				if (state.guests.length >= state.capacity) return Result.fail(SoldOut.make({}));
-				return Result.succeed([Booked.make({ guest })]);
-			},
-			Cancel: ({ guest }) =>
-				state.guests.includes(guest)
-					? Result.succeed([Cancelled.make({ guest })])
-					: Result.fail(NotBooked.make({ guest }))
-		}),
+	decide: {
+		Book: (state, { guest }) => {
+			if (state.guests.includes(guest)) return Result.fail(AlreadyBooked.make({ guest }));
+			if (state.guests.length >= state.capacity) return Result.fail(SoldOut.make({}));
+			return Result.succeed([Booked.make({ guest })]);
+		},
+		Cancel: (state, { guest }) =>
+			state.guests.includes(guest)
+				? Result.succeed([Cancelled.make({ guest })])
+				: Result.fail(NotBooked.make({ guest }))
+	},
 	evolve: (state, event) =>
 		Event.match(event, {
 			Booked: ({ guest }) => ({ ...state, guests: [...state.guests, guest] }),

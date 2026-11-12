@@ -92,17 +92,22 @@ layer(Memberships.layer)('Decider.handle', (it) => {
 	it.effect('commits the events and the state they reach, or fails with the rejection', () =>
 		Effect.gen(function* () {
 			// #region handle
-			const grant = Decider.handle(membership, Memberships);
+			const handled = Decider.handle(membership, Memberships);
 
-			const { events, state } = yield* grant('user-2', Grant.make({ source: 'teachable', at }));
+			const { events, state } = yield* handled('user-2', Grant.make({ source: 'teachable', at }));
 			expect(events).toEqual([Granted.make({ source: 'teachable', at })]);
 			expect(state).toEqual({ source: 'teachable', active: true, checkedAt: at });
 
-			// A rejection is the typed error, and nothing is saved.
-			const again = yield* grant('user-2', Grant.make({ source: 'teachable', at: later })).pipe(
+			// A rejection is the typed error, and nothing is saved. The Grant handler rejects only
+			// with AlreadyActive, so catching it leaves no error.
+			const again: Effect.Effect<string, never, Memberships> = handled(
+				'user-2',
+				Grant.make({ source: 'teachable', at: later })
+			).pipe(
+				Effect.as('granted'),
 				Effect.catchTag('AlreadyActive', ({ since }) => Effect.succeed(`active since ${since}`))
 			);
-			expect(again).toBe(`active since ${at}`);
+			expect(yield* again).toBe(`active since ${at}`);
 			// #endregion handle
 		})
 	);

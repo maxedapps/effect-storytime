@@ -32,7 +32,7 @@ export const cases = <
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	DeciderCommand,
+	DeciderCommand extends Tagged,
 	Event,
 	Rejection
 >(
@@ -69,7 +69,7 @@ export const covers = Effect.fnUntraced(function* <
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	DeciderCommand,
+	DeciderCommand extends Tagged,
 	Event,
 	Rejection
 >(

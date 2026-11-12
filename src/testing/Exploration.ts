@@ -120,7 +120,7 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 };
 
 /** Explores a Decider: paths of commands decided one after another from a given state. */
-export const decisions = <State, Command, Event, Rejection>(
+export const decisions = <State, Command extends Tagged, Event, Rejection>(
 	title: string,
 	decider: Decider<State, Command, Event, Rejection>,
 	options: DecisionOptions<
@@ -273,7 +273,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 };
 
 /** Walks a Decider's path, turning each command into a `when`, and gives the cases it touched. */
-const deciderWalker = <State, Command, Event, Rejection>(
+const deciderWalker = <State, Command extends Tagged, Event, Rejection>(
 	title: string,
 	decider: Decider<State, Command, Event, Rejection>,
 	properties: Properties<Ruling<State, Command, Event, Rejection>> | undefined

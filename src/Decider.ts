@@ -1,51 +1,94 @@
 /**
- * A Decider is the command side of a consistency boundary: `decide` turns a state and a command
- * into events or a rejection, `evolve` folds an event into the state, and named invariants say
- * which states may exist. `handle` runs it on a Store in one transaction, which makes it an
- * aggregate.
+ * A Decider is the command side of a consistency boundary: `decide` holds one handler per command
+ * tag that turns a state and that command into events or a rejection, `evolve` folds an event into
+ * the state, and named invariants say which states may exist. `handle` runs it on a Store in one
+ * transaction, which makes it an aggregate, typed per command by its handler.
  */
 import { Effect } from 'effect';
 import type { Context, Option, Result, Schema } from 'effect';
 import { enforce } from './internal/invariants.ts';
-import { decideIn, transition } from './internal/transition.ts';
-import type { Invariants } from './Program.ts';
+import { decideBy, decideIn, transition } from './internal/transition.ts';
+import type { Invariants, Tagged } from './Program.ts';
 
-export interface Decider<State, Command, Event, Rejection> {
+/** One pure handler per command tag: what the command tagged `Tag` gives in a state. */
+export type Handlers<State, Command extends Tagged, Event, Rejection> = {
+	readonly [Tag in Command['_tag']]: (
+		state: State,
+		command: Command & { readonly _tag: Tag }
+	) => Result.Result<ReadonlyArray<Event>, Rejection>;
+};
+
+export interface Decider<
+	State,
+	Command extends Tagged,
+	Event,
+	Rejection,
+	Decide extends Handlers<State, Command, Event, Rejection> = Handlers<
+		State,
+		Command,
+		Event,
+		Rejection
+	>
+> {
 	readonly State: Schema.Codec<State, unknown>;
 	readonly Command: Schema.Codec<Command, unknown>;
 	readonly Event: Schema.Codec<Event, unknown>;
 	readonly Rejection: Schema.Codec<Rejection, unknown>;
 	/** The state of a key nothing was saved for yet. */
 	readonly initial: State;
-	readonly decide: (
-		state: State,
-		command: Command
-	) => Result.Result<ReadonlyArray<Event>, Rejection>;
+	readonly decide: Decide;
 	readonly evolve: (state: State, event: Event) => State;
 	readonly invariants: Invariants<State>;
 }
 
-export interface Definition<State, Command, Event, Rejection> {
+export interface Definition<
+	State,
+	Command extends Tagged,
+	Event,
+	Rejection,
+	Decide extends Handlers<State, Command, Event, Rejection>
+> {
 	readonly State: Schema.Codec<State, unknown>;
 	readonly Command: Schema.Codec<Command, unknown>;
 	readonly Event: Schema.Codec<Event, unknown>;
 	readonly Rejection: Schema.Codec<Rejection, unknown>;
 	readonly initial: State;
-	readonly decide: (
-		state: State,
-		command: Command
-	) => Result.Result<ReadonlyArray<Event>, Rejection>;
+	/** One handler per command tag; each handler's return type is its command's contract. */
+	readonly decide: Decide;
 	readonly evolve: (state: State, event: Event) => State;
 	/** Named predicates every state must satisfy, checked by `handle` on the state each command reaches, before it saves. */
 	readonly invariants?: Invariants<State>;
 }
 
-export const make = <State, Command, Event, Rejection>(
-	definition: Definition<State, Command, Event, Rejection>
-): Decider<State, Command, Event, Rejection> => ({
+export const make = <
+	State,
+	Command extends Tagged,
+	Event,
+	Rejection,
+	Decide extends Handlers<State, Command, Event, Rejection>
+>(
+	definition: Definition<State, Command, Event, Rejection, Decide>
+): Decider<State, Command, Event, Rejection, Decide> => ({
 	...definition,
 	invariants: definition.invariants ?? {}
 });
+
+/** What the handlers of `Decide` give for the commands `C`. */
+type Ruled<Decide, C extends Tagged> = Decide[C['_tag'] & keyof Decide] extends infer Handler
+	? Handler extends (...args: never) => infer Given
+		? Given
+		: never
+	: never;
+
+/** The events a command `C` may give, from its handler in `Decide`. */
+export type EventOf<Decide, C extends Tagged> =
+	Ruled<Decide, C> extends Result.Result<infer Events extends ReadonlyArray<unknown>, unknown>
+		? Events[number]
+		: never;
+
+/** The rejections a command `C` may give, from its handler in `Decide`. */
+export type RejectionOf<Decide, C extends Tagged> =
+	Ruled<Decide, C> extends Result.Result<unknown, infer Rejection> ? Rejection : never;
 
 /**
  * Where a Decider's states live: one row or several tables, implemented by the app as a
@@ -70,25 +113,43 @@ export interface Handled<State, Event> {
 }
 
 /**
- * Handles commands for keys of a Store service: loads the state (or `initial`), decides, folds the
- * events, checks the invariants on the state they reach and saves, in one transaction, traced as
- * the span `Decider.handle`. Resolves after the commit with the events and the state they reached;
- * a rejection fails the Effect and a broken invariant dies with `Program.InvariantBroken`.
+ * Handles commands for keys of a Store service: loads the state (or `initial`), decides with the
+ * command's handler, folds the events, checks the invariants on the state they reach and saves, in
+ * one transaction, traced as the span `Decider.handle`. Resolves after the commit with the events
+ * and the state they reached; a rejection fails the Effect and a broken invariant dies with
+ * `Program.InvariantBroken`. The events and rejections are those of the command's handler.
  */
-export const handle = <State, Command, Event, Rejection, Id, Key, E>(
-	decider: Decider<State, Command, Event, Rejection>,
+export const handle = <
+	State,
+	Command extends Tagged,
+	Event,
+	Rejection,
+	Decide extends Handlers<State, Command, Event, Rejection>,
+	Id,
+	Key,
+	E
+>(
+	decider: Decider<State, Command, Event, Rejection, Decide>,
 	Store: Context.Key<Id, Store<Key, State, Event, E>>
 ) => {
+	const decide = decideBy(decider);
 	const rule = transition<State, Command, Event, Rejection, never>({
-		decide: (state, command) => Effect.sync(() => decider.decide(state, command)),
+		decide: (state, command) => Effect.sync(() => decide(state, command)),
 		evolve: (state, event) => Effect.sync(() => decider.evolve(state, event)),
 		holds: enforce(decider.invariants, decider.State)
 	});
-	return Effect.fn('Decider.handle')(function* (
+	const traced = Effect.fn('Decider.handle')(function* (
 		key: Key,
 		command: Command
 	): Effect.fn.Return<Handled<State, Event>, Rejection | E, Id> {
 		const { decided, reached } = yield* decideIn(decider, yield* Store, rule)(key, command);
 		return { events: yield* Effect.fromResult(decided), state: reached };
 	});
+	// SAFETY: each command runs only the handler of its own tag, so it gives only that handler's
+	// events and rejections; `Handlers` requires every handler to give a subset of the whole unions.
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't relate a command to its tag's handler
+	return traced as <C extends Command>(
+		key: Key,
+		command: C
+	) => Effect.Effect<Handled<State, EventOf<Decide, C>>, RejectionOf<Decide, C> | E, Id>;
 };

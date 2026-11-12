@@ -8,6 +8,7 @@ import type { Context } from 'effect';
 import type { Decider, Store } from '../Decider.ts';
 import { describer } from '../internal/canonical.ts';
 import { Problem } from './internal/check.ts';
+import type { Tagged } from '../Program.ts';
 import { caser, checks, strict } from './internal/decider.ts';
 import type { Decided } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from '../internal/transition.ts';
@@ -51,7 +52,7 @@ export interface Builders<State, Command, Event, Rejection> {
 }
 
 /** The step builders for decisions about `decider`; only its types matter. */
-export const of = <State, Command, Event, Rejection>(
+export const of = <State, Command extends Tagged, Event, Rejection>(
 	_decider: Decider<State, Command, Event, Rejection>
 ): Builders<State, Command, Event, Rejection> => ({
 	given: (state) => Step.Given({ state }),
@@ -62,7 +63,9 @@ export const of = <State, Command, Event, Rejection>(
 	satisfies: (label, check) => Step.Satisfies({ label, check })
 });
 
-export class Decision<State, Command, Event, Rejection> extends Data.TaggedClass('Decision')<{
+export class Decision<State, Command extends Tagged, Event, Rejection> extends Data.TaggedClass(
+	'Decision'
+)<{
 	readonly title: string;
 	readonly decider: Decider<State, Command, Event, Rejection>;
 	readonly steps: ReadonlyArray<Step<State, Command, Event, Rejection>>;
@@ -72,7 +75,7 @@ export class Decision<State, Command, Event, Rejection> extends Data.TaggedClass
 	}
 }
 
-export const make = <State, Command, Event, Rejection>(
+export const make = <State, Command extends Tagged, Event, Rejection>(
 	title: string,
 	decider: Decider<State, Command, Event, Rejection>,
 	...body: ReadonlyArray<Step<State, Command, Event, Rejection>>
@@ -86,7 +89,7 @@ export interface Outcome<State> {
 	readonly cases: ReadonlyArray<string>;
 }
 
-const liner = <State, Command, Event, Rejection>(
+const liner = <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>
 ) => {
 	const showState = describer(decider.State);
@@ -106,7 +109,7 @@ const liner = <State, Command, Event, Rejection>(
 };
 
 /** Renders a decision as plain lines, from its value alone. */
-export const lines = <State, Command, Event, Rejection>(
+export const lines = <State, Command extends Tagged, Event, Rejection>(
 	decision: Decision<State, Command, Event, Rejection>
 ): ReadonlyArray<string> => decision.steps.map(liner(decision.decider));
 
@@ -122,7 +125,7 @@ interface Backend<State, Command, Event, Rejection, E> {
 
 const isProblem = (error: unknown): error is Problem => error instanceof Problem;
 
-const tell = Effect.fnUntraced(function* <State, Command, Event, Rejection, E>(
+const tell = Effect.fnUntraced(function* <State, Command extends Tagged, Event, Rejection, E>(
 	decision: Decision<State, Command, Event, Rejection>,
 	backend: Backend<State, Command, Event, Rejection, E>
 ): Effect.fn.Return<Outcome<State>, StoryFailure | E> {
@@ -303,7 +306,7 @@ const tell = Effect.fnUntraced(function* <State, Command, Event, Rejection, E>(
 });
 
 /** Keeps the state in memory. */
-const memory = Effect.fnUntraced(function* <State, Command, Event, Rejection>(
+const memory = Effect.fnUntraced(function* <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>
 ) {
 	const rules = strict(decider);
@@ -321,7 +324,7 @@ const memory = Effect.fnUntraced(function* <State, Command, Event, Rejection>(
 });
 
 /** Runs a decision in memory: every step and every strict rule. */
-export const run = <State, Command, Event, Rejection>(
+export const run = <State, Command extends Tagged, Event, Rejection>(
 	decision: Decision<State, Command, Event, Rejection>
 ): Effect.Effect<Outcome<State>, StoryFailure> =>
 	Effect.flatMap(memory(decision.decider), (backend) => tell(decision, backend));
@@ -332,7 +335,7 @@ export const run = <State, Command, Event, Rejection>(
  * and fails unless it equals the given state. Each `when` decides and saves, and `state` loads and
  * checks what the Store gives back. Store errors fail as they are.
  */
-export const against = <State, Command, Event, Rejection, Id, Key, E>(
+export const against = <State, Command extends Tagged, Event, Rejection, Id, Key, E>(
 	decision: Decision<State, Command, Event, Rejection>,
 	Store: Context.Key<Id, Store<Key, State, Event, E>>,
 	key: Key

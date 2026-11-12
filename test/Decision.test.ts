@@ -209,8 +209,10 @@ describe('Decision', () => {
 				step: 2,
 				problem: 'invariant checkedWhenActive does not hold'
 			});
-			const throwing = variant(() => {
-				throw new Error('no rule');
+			const throwing = variant({
+				Grant: () => {
+					throw new Error('no rule');
+				}
 			});
 			const throws = Decision.make('throws', throwing, given(none), when(grant));
 			expect(yield* Effect.flip(Decision.against(throws, Memberships, 'u3'))).toMatchObject({
@@ -432,7 +434,11 @@ describe('Decision', () => {
 					...membership,
 					State: Schema.Struct({ value: Schema.Unknown }),
 					initial: { value: null },
-					decide: () => Result.succeed([]),
+					decide: {
+						Grant: () => Result.succeed([]),
+						Check: () => Result.succeed([]),
+						Revoke: () => Result.succeed([])
+					},
 					evolve: (current) => current,
 					invariants: {}
 				});
@@ -496,23 +502,29 @@ describe('Decision', () => {
 
 		it.effect('a decide that throws, mutates, drifts or gives invalid events', () =>
 			Effect.gen(function* () {
-				const throwing = variant(() => {
-					throw new Error('no rule');
+				const throwing = variant({
+					Grant: () => {
+						throw new Error('no rule');
+					}
 				});
 				expect(
 					yield* failure(Decision.make('throws', throwing, given(none), when(grant)))
 				).toMatchObject({ step: 2, problem: 'decide threw: Error: no rule' });
-				const mutating = variant((current, command) => {
-					Object.assign(current, { checkedAt: later });
-					return membership.decide(current, command);
+				const mutating = variant({
+					Grant: (current, command) => {
+						Object.assign(current, { checkedAt: later });
+						return membership.decide.Grant(current, command);
+					}
 				});
 				expect(
 					yield* failure(Decision.make('mutates', mutating, given(none), when(grant)))
 				).toMatchObject({ step: 2, problem: 'decide changed its input' });
 				let calls = 0;
-				const drifting = variant(() => {
-					calls += 1;
-					return calls === 1 ? Result.succeed([]) : Result.fail(NotActive.make({}));
+				const drifting = variant({
+					Grant: () => {
+						calls += 1;
+						return calls === 1 ? Result.succeed([]) : Result.fail(NotActive.make({}));
+					}
 				});
 				expect(
 					yield* failure(Decision.make('drifts', drifting, given(none), when(grant)))
@@ -522,7 +534,9 @@ describe('Decision', () => {
 					expected: 'accepted []',
 					actual: 'rejected {"_tag":"NotActive"}'
 				});
-				const refusing = variant(() => Result.fail(AlreadyActive.make({ since: '' }, blank)));
+				const refusing = variant({
+					Grant: () => Result.fail(AlreadyActive.make({ since: '' }, blank))
+				});
 				expect(
 					yield* failure(Decision.make('refusing', refusing, given(none), when(grant)))
 				).toMatchObject({
@@ -530,9 +544,9 @@ describe('Decision', () => {
 					problem:
 						'the rejection is invalid: Expected a value with a length of at least 1\n  at ["since"]'
 				});
-				const invalid = variant(() =>
-					Result.succeed([Granted.make({ source: 'teachable', at: '' }, blank)])
-				);
+				const invalid = variant({
+					Grant: () => Result.succeed([Granted.make({ source: 'teachable', at: '' }, blank)])
+				});
 				expect(
 					yield* failure(Decision.make('invalid', invalid, given(none), when(grant)))
 				).toMatchObject({
@@ -568,7 +582,7 @@ describe('Decision', () => {
 				const shared = Granted.make({ source: 'teachable', at });
 				const sharing = Decider.make({
 					...membership,
-					decide: () => Result.succeed([shared]),
+					decide: { ...membership.decide, Grant: () => Result.succeed([shared]) },
 					evolve: (current, event) => {
 						Object.assign(event, { at: later });
 						return membership.evolve(current, event);
@@ -585,9 +599,12 @@ describe('Decision', () => {
 				const reached = { ...active };
 				const keeping = Decider.make({
 					...membership,
-					decide: (current, command) => {
-						if (Command.guards.Revoke(command)) Object.assign(current, { checkedAt: later });
-						return membership.decide(current, command);
+					decide: {
+						...membership.decide,
+						Revoke: (current) => {
+							Object.assign(current, { checkedAt: later });
+							return membership.decide.Revoke(current);
+						}
 					},
 					evolve: () => reached
 				});

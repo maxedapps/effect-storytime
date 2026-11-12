@@ -2,7 +2,7 @@
 
 `import { Decider } from 'effect-storytime'`
 
-A Decider is the command side of one consistency boundary. `decide` turns a state and a command into events or a rejection, `evolve` folds an event into the state, and named invariants say which states may exist. `Decider.handle` runs it on a Store in one transaction. See [domain-modelling.md](domain-modelling.md) for when to use one.
+A Decider is the command side of one consistency boundary. `decide` holds one handler per command, which turns a state and that command into events or a rejection, `evolve` folds an event into the state, and named invariants say which states may exist. `Decider.handle` runs it on a Store in one transaction. See [domain-modelling.md](domain-modelling.md) for when to use one.
 
 ## Defining a Decider
 
@@ -45,27 +45,10 @@ export const { Granted, Checked, Revoked } = Event.cases;
 export const { AlreadyActive, NotActive, Manual } = Rejection.cases;
 ```
 
-Then the rules. `decide` returns an Effect `Result`: `Result.succeed(events)` to accept, `Result.fail(rejection)` to reject. An accepted command may give no events (`Result.succeed([])`), which `handle` treats as a no-op.
+Then the rules. `decide` is a record with one handler per command tag; each takes the state and the command of its tag and returns an Effect `Result`: `Result.succeed(events)` to accept, `Result.fail(rejection)` to reject. An accepted command may give no events (`Result.succeed([])`), which `handle` treats as a no-op. Leave each handler's return type inferred: it is that command's contract, the events and rejections `handle` types its calls with. A handler that returns an event or rejection outside the Decider's Schemas, or a missing handler, is a compile error on its own line.
 
 <!-- snippet: test/examples/membership.ts#decider -->
 ```ts
-const decide = (
-	current: Membership,
-	command: Command
-): Result.Result<ReadonlyArray<Event>, Rejection> =>
-	Command.match(command, {
-		Grant: ({ source, at }) =>
-			current.active
-				? Result.fail(AlreadyActive.make({ since: current.checkedAt }))
-				: Result.succeed([Granted.make({ source, at })]),
-		Check: ({ active, at }) =>
-			current.source === 'manual'
-				? Result.fail(Manual.make({}))
-				: Result.succeed(active === current.active ? [] : [Checked.make({ active, at })]),
-		Revoke: () =>
-			current.active ? Result.succeed([Revoked.make({})]) : Result.fail(NotActive.make({}))
-	});
-
 const evolve = (current: Membership, event: Event): Membership =>
 	Event.match(event, {
 		Granted: ({ source, at }) => ({ source, active: true, checkedAt: at }),
@@ -81,7 +64,19 @@ export const membership = Decider.make({
 	Event,
 	Rejection,
 	initial: none,
-	decide,
+	// One handler per command; what each returns is that command's contract.
+	decide: {
+		Grant: (current, { source, at }) =>
+			current.active
+				? Result.fail(AlreadyActive.make({ since: current.checkedAt }))
+				: Result.succeed([Granted.make({ source, at })]),
+		Check: (current, { active, at }) =>
+			current.source === 'manual'
+				? Result.fail(Manual.make({}))
+				: Result.succeed(active === current.active ? [] : [Checked.make({ active, at })]),
+		Revoke: (current) =>
+			current.active ? Result.succeed([Revoked.make({})]) : Result.fail(NotActive.make({}))
+	},
 	evolve,
 	invariants: { checkedWhenActive: (current) => !current.active || current.checkedAt !== null }
 });
@@ -96,18 +91,18 @@ export const membership = Decider.make({
 | `Event` | `Schema.Codec<Event, unknown>` | What happened. Use a `Schema.TaggedUnion`. |
 | `Rejection` | `Schema.Codec<Rejection, unknown>` | Why a command was refused. Use a `Schema.TaggedUnion`, so `Effect.catchTag` can handle each case. |
 | `initial` | `State` | The state of a key nothing was saved for yet. |
-| `decide` | `(state, command) => Result<ReadonlyArray<Event>, Rejection>` | Pure. Events in the order they happen. |
+| `decide` | `{ [Tag]: (state, command) => Result<ReadonlyArray<Event>, Rejection> }` | One pure handler per command tag. Events in the order they happen. |
 | `evolve` | `(state, event) => State` | Pure. Folds one event. |
 | `invariants` | `Record<string, (state) => boolean>`, optional | Named predicates every state must satisfy. `{}` by default. |
 
-It returns a `Decider<State, Command, Event, Rejection>`: the same fields, with `invariants` always present. The value is plain data, so `Decider.make({ ...membership, decide: other })` builds a variant.
+It returns a `Decider<State, Command, Event, Rejection, Decide>`, `Decide` being the handlers' own types: the same fields, with `invariants` always present. The value is plain data, so `Decider.make({ ...membership, decide: { ...membership.decide, Revoke: other } })` builds a variant, and a test calls one rule as `membership.decide.Grant(state, command)`.
 
 ## Handling commands
 
-`Decider.handle(decider, Store)` takes the Decider and the `Context.Service` class of its Store and returns `(key, command) => Effect<Handled<State, Event>, Rejection | E, Store>`. One call runs one transaction:
+`Decider.handle(decider, Store)` takes the Decider and the `Context.Service` class of its Store and returns `<C extends Command>(key, command: C) => Effect<Handled<State, EventOf<C>>, RejectionOf<C> | E, Store>`: a call gives only the events and rejections of its command's handler, so a new rejection on one command is a compile error at the callers that send it, not a surprise at runtime. A command typed as the whole union gives every handler's. One call runs one transaction:
 
 1. `load(key)`, or `initial` when it gives `Option.none()`.
-2. `decide(state, command)`. A rejection fails the Effect with the rejection, and nothing is saved.
+2. The handler of the command's tag, on the state and the command. A rejection fails the Effect with the rejection, and nothing is saved.
 3. `evolve` folds each event, and every invariant is checked once, on the state the last event reached. The states in between aren't checked, so a command's events may pass through a state that only its last event resolves.
 4. `save(key, state, events)`, unless there are no events.
 
@@ -115,17 +110,22 @@ It resolves after the commit with `{ events, state }`: the events and the state 
 
 <!-- snippet: test/docs/membership.test.ts#handle -->
 ```ts
-const grant = Decider.handle(membership, Memberships);
+const handled = Decider.handle(membership, Memberships);
 
-const { events, state } = yield* grant('user-2', Grant.make({ source: 'teachable', at }));
+const { events, state } = yield* handled('user-2', Grant.make({ source: 'teachable', at }));
 expect(events).toEqual([Granted.make({ source: 'teachable', at })]);
 expect(state).toEqual({ source: 'teachable', active: true, checkedAt: at });
 
-// A rejection is the typed error, and nothing is saved.
-const again = yield* grant('user-2', Grant.make({ source: 'teachable', at: later })).pipe(
+// A rejection is the typed error, and nothing is saved. The Grant handler rejects only
+// with AlreadyActive, so catching it leaves no error.
+const again: Effect.Effect<string, never, Memberships> = handled(
+	'user-2',
+	Grant.make({ source: 'teachable', at: later })
+).pipe(
+	Effect.as('granted'),
 	Effect.catchTag('AlreadyActive', ({ since }) => Effect.succeed(`active since ${since}`))
 );
-expect(again).toBe(`active since ${at}`);
+expect(yield* again).toBe(`active since ${at}`);
 ```
 
 ### A broken invariant
@@ -268,8 +268,10 @@ Test a real Store with the same decisions you run in memory: `Decision.against` 
 | Export | Kind | Meaning |
 | --- | --- | --- |
 | `make(definition)` | function | Builds a `Decider`, defaulting `invariants` to `{}`. |
-| `handle(decider, Store)` | function | Gives `(key, command) => Effect<Handled, Rejection \| E, Store>`. |
-| `Decider<State, Command, Event, Rejection>` | interface | What `make` returns. |
-| `Definition<State, Command, Event, Rejection>` | interface | What `make` takes. |
+| `handle(decider, Store)` | function | Gives `(key, command: C) => Effect<Handled<State, EventOf<C>>, RejectionOf<C> \| E, Store>`. |
+| `Decider<State, Command, Event, Rejection, Decide>` | interface | What `make` returns. |
+| `Definition<State, Command, Event, Rejection, Decide>` | interface | What `make` takes. |
+| `Handlers<State, Command, Event, Rejection>` | type | The shape of `decide`: one handler per command tag. |
+| `EventOf<Decide, C>`, `RejectionOf<Decide, C>` | types | The events and rejections the handler of command `C` gives. |
 | `Store<Key, State, Event, E>` | interface | `load`, `save`, `transaction`. |
 | `Handled<State, Event>` | interface | `{ events, state }`, what `handle` resolves with. |

@@ -501,9 +501,11 @@ describe('Exploration', () => {
 
 	it.effect('shrinks a throwing decide to the shortest decision that throws', () =>
 		Effect.gen(function* () {
-			const throwing = variant((current, command) => {
-				if (current.active && MembershipCommand.guards.Revoke(command)) throw new Error('revoked');
-				return membership.decide(current, command);
+			const throwing = variant({
+				Revoke: (current) => {
+					if (current.active) throw new Error('revoked');
+					return membership.decide.Revoke(current);
+				}
 			});
 			const failure = yield* Effect.flip(
 				Exploration.check(
@@ -586,7 +588,7 @@ describe('Exploration', () => {
 				Event: Push,
 				Rejection: Push,
 				initial: Door.cases.Closed.make({}),
-				decide: () => Result.succeed([]),
+				decide: { Push: () => Result.succeed([]) },
 				evolve: (current) => current
 			});
 			expect(

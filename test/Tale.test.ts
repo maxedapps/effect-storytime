@@ -45,7 +45,7 @@ const doorRules = {
 	Event: Swung,
 	Rejection: Stuck,
 	initial: Door.cases.Closed.make({}),
-	decide: () => Result.succeed([Swung.cases.Swung.make({})]),
+	decide: { Push: () => Result.succeed([Swung.cases.Swung.make({})]) },
 	evolve: (current: typeof Door.Type) =>
 		Door.guards.Open(current) ? Door.cases.Closed.make({}) : Door.cases.Open.make({})
 };
@@ -144,7 +144,9 @@ describe('Tale', () => {
 		Effect.gen(function* () {
 			const revolving = Decider.make({
 				...doorRules,
-				decide: () => Result.succeed([Swung.cases.Swung.make({}), Swung.cases.Swung.make({})])
+				decide: {
+					Push: () => Result.succeed([Swung.cases.Swung.make({}), Swung.cases.Swung.make({})])
+				}
 			});
 			const revolves = Exploration.decisions('the door revolves', revolving, { runs: 5 });
 			expect(yield* Effect.flip(Tale.covers(revolving, [revolves]))).toEqual(

@@ -40,23 +40,6 @@ export const { AlreadyActive, NotActive, Manual } = Rejection.cases;
 // #endregion schemas
 
 // #region decider
-const decide = (
-	current: Membership,
-	command: Command
-): Result.Result<ReadonlyArray<Event>, Rejection> =>
-	Command.match(command, {
-		Grant: ({ source, at }) =>
-			current.active
-				? Result.fail(AlreadyActive.make({ since: current.checkedAt }))
-				: Result.succeed([Granted.make({ source, at })]),
-		Check: ({ active, at }) =>
-			current.source === 'manual'
-				? Result.fail(Manual.make({}))
-				: Result.succeed(active === current.active ? [] : [Checked.make({ active, at })]),
-		Revoke: () =>
-			current.active ? Result.succeed([Revoked.make({})]) : Result.fail(NotActive.make({}))
-	});
-
 const evolve = (current: Membership, event: Event): Membership =>
 	Event.match(event, {
 		Granted: ({ source, at }) => ({ source, active: true, checkedAt: at }),
@@ -72,16 +55,28 @@ export const membership = Decider.make({
 	Event,
 	Rejection,
 	initial: none,
-	decide,
+	// One handler per command; what each returns is that command's contract.
+	decide: {
+		Grant: (current, { source, at }) =>
+			current.active
+				? Result.fail(AlreadyActive.make({ since: current.checkedAt }))
+				: Result.succeed([Granted.make({ source, at })]),
+		Check: (current, { active, at }) =>
+			current.source === 'manual'
+				? Result.fail(Manual.make({}))
+				: Result.succeed(active === current.active ? [] : [Checked.make({ active, at })]),
+		Revoke: (current) =>
+			current.active ? Result.succeed([Revoked.make({})]) : Result.fail(NotActive.make({}))
+	},
 	evolve,
 	invariants: { checkedWhenActive: (current) => !current.active || current.checkedAt !== null }
 });
 // #endregion decider
 
-/** The membership with another `decide`, keeping the rest. */
+/** The membership with some handlers replaced, keeping the rest. */
 export const variant = (
-	other: (current: Membership, command: Command) => Result.Result<ReadonlyArray<Event>, Rejection>
-) => Decider.make({ ...membership, decide: other });
+	handlers: Partial<Decider.Handlers<Membership, Command, Event, Rejection>>
+) => Decider.make({ ...membership, decide: { ...membership.decide, ...handlers } });
 
 export const at = '2026-11-03T00:00:00.000Z';
 export const later = '2026-11-04T00:00:00.000Z';

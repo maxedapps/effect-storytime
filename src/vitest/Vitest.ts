@@ -70,7 +70,7 @@ export const covers = <
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	DeciderCommand,
+	DeciderCommand extends Tagged,
 	Event,
 	Rejection
 >(

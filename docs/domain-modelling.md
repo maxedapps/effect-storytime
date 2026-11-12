@@ -2,7 +2,7 @@
 
 effect-storytime keeps to the functional core of Domain-Driven Design. A domain is two kinds of pure state machine whose inputs, outputs and side effects are all Schema data:
 
-- A **Decider** ([decider.md](decider.md)) holds the rules of one consistency boundary. `decide(state, command)` gives events or a rejection, `evolve(state, event)` folds an event into the state, and named invariants say which states may exist. `Decider.handle` runs it on a Store in one transaction, which makes it an aggregate.
+- A **Decider** ([decider.md](decider.md)) holds the rules of one consistency boundary. `decide` holds one handler per command, which gives that command's events or rejection, `evolve(state, event)` folds an event into the state, and named invariants say which states may exist. `Decider.handle` runs it on a Store in one transaction, which makes it an aggregate.
 - A **Program** ([program.md](program.md)) holds the state of a process or a screen. `update(model, message)` gives the next model, the commands to start and the commands to cancel. A **Loop** ([loop.md](loop.md)) runs it, and its commands are where effects happen.
 
 Everything else is plain Effect. [ADR 0003](../adrs/0003-lean-domain-library.md) explains why there are no aggregate, repository, policy or event store types.

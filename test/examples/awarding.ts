@@ -25,10 +25,12 @@ export const badges = Decider.make({
 	Event,
 	Rejection,
 	initial: { badges: [] },
-	decide: (earned, { badge }) =>
-		earned.badges.includes(badge)
-			? Result.fail(AlreadyEarned.make({ badge }))
-			: Result.succeed([BadgeEarned.make({ badge })]),
+	decide: {
+		Award: (earned, { badge }) =>
+			earned.badges.includes(badge)
+				? Result.fail(AlreadyEarned.make({ badge }))
+				: Result.succeed([BadgeEarned.make({ badge })])
+	},
 	evolve: (earned, { badge }) => ({ badges: [...earned.badges, badge] })
 });
 // #endregion badges
