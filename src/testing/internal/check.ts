@@ -3,8 +3,8 @@
  * Problem that the runner turns into a StoryFailure at the current step.
  */
 import { Data, Effect, Result, Schema } from 'effect';
-import type { Invariants } from '../Program.ts';
-import { canonical, describer } from './canonical.ts';
+import type { Invariants } from '../../Program.ts';
+import { canonical, describer } from '../../internal/canonical.ts';
 
 export class Problem extends Data.Error<{
 	readonly message: string;

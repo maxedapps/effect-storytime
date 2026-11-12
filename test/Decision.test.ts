@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Effect, Result, Schema } from 'effect';
-import { Decider, Decision, Story } from '../src/index.ts';
+import { Decider } from '../src/index.ts';
+import { Decision, Story } from '../src/testing/index.ts';
 import {
 	AlreadyActive,
 	at,
@@ -11,7 +12,7 @@ import {
 	later,
 	membership,
 	type Event,
-	Input,
+	Command,
 	type Membership,
 	Memberships,
 	none,
@@ -52,17 +53,17 @@ const reachedInactive = {
 	state: inactive,
 	final: '{"active":0,"checkedAt":"2026-11-04T00:00:00.000Z","source":"teachable"}',
 	cases: [
+		'Command.Check',
+		'Command.Grant',
+		'Command.Revoke',
 		'Event.Checked',
 		'Event.Granted',
-		'Input.Check',
-		'Input.Grant',
-		'Input.Revoke',
 		'Rejection.AlreadyActive',
 		'Rejection.NotActive'
 	]
 };
 
-const failure = (decision: Decision.Decision<Membership, Input, Event, Rejection>) =>
+const failure = (decision: Decision.Decision<Membership, Command, Event, Rejection>) =>
 	Effect.flip(Decision.run(decision));
 
 const evolved = (evolve: (current: Membership, event: Event) => Membership) =>
@@ -101,9 +102,7 @@ describe('Decision', () => {
 		Effect.gen(function* () {
 			expect(yield* Decision.against(lifecycle, Memberships, 'u1')).toEqual(reachedInactive);
 			expect(yield* (yield* Memberships).log).toEqual([
-				'begin',
-				'save u1',
-				'commit',
+				'load u1',
 				'begin',
 				'load u1',
 				'save u1 Granted',
@@ -124,6 +123,40 @@ describe('Decision', () => {
 				'load u1',
 				'commit',
 				'load u1'
+			]);
+		}).pipe(Effect.provide(Memberships.layer))
+	);
+
+	it.effect('starts from the rows the test arranged, which must load as the given state', () =>
+		Effect.gen(function* () {
+			const store = yield* Memberships;
+			yield* store.save('u1', active, []);
+			const revokes = Decision.make(
+				'an arranged membership is revoked',
+				membership,
+				given(active),
+				when(revoke),
+				accepted(Revoked.make({}))
+			);
+			expect(yield* Decision.against(revokes, Memberships, 'u1')).toMatchObject({
+				state: { ...active, active: false }
+			});
+			expect(yield* Effect.flip(Decision.against(revokes, Memberships, 'u2'))).toMatchObject({
+				step: 1,
+				line: 'given {"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}',
+				message: 'the stored state differs from given',
+				expected: '{"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}',
+				actual: '{"active":0,"checkedAt":null,"source":"teachable"}'
+			});
+			expect(yield* store.log).toEqual([
+				'save u1',
+				'load u1',
+				'begin',
+				'load u1',
+				'save u1 Revoked',
+				'commit',
+				'load u1',
+				'load u2'
 			]);
 		}).pipe(Effect.provide(Memberships.layer))
 	);
@@ -154,18 +187,20 @@ describe('Decision', () => {
 
 	it.effect('holds a store run to every strict rule', () =>
 		Effect.gen(function* () {
-			const broken = Decision.make('given', membership, given({ ...none, active: true }));
+			const unchecked = { ...none, active: true };
+			yield* (yield* Memberships).save('u1', unchecked, []);
+			const broken = Decision.make('given', membership, given(unchecked));
 			expect(yield* Effect.flip(Decision.against(broken, Memberships, 'u1'))).toMatchObject({
 				step: 1,
 				message: 'invariant checkedWhenActive does not hold'
 			});
-			const unchecked = Decider.make({
+			const activating = Decider.make({
 				...membership,
 				evolve: (current) => ({ ...current, active: true })
 			});
 			const evolving = Decision.make(
 				'evolved',
-				unchecked,
+				activating,
 				given(none),
 				when(grant),
 				accepted(granted)
@@ -266,7 +301,7 @@ describe('Decision', () => {
 				const refused = Decision.make('refused', membership, given(none), when(revoke), accepted());
 				expect(yield* failure(refused)).toMatchObject({
 					step: 3,
-					message: 'the input was rejected',
+					message: 'the command was rejected',
 					expected: '',
 					actual: 'NotActive'
 				});
@@ -297,7 +332,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(taken)).toMatchObject({
 					step: 3,
-					message: 'the input was accepted',
+					message: 'the command was accepted',
 					expected: 'NotActive',
 					actual: 'Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}'
 				});
@@ -340,21 +375,21 @@ describe('Decision', () => {
 			})
 		);
 
-		it.effect('invalid given states, inputs and expected values, checked on the Type side', () =>
+		it.effect('invalid given states, commands and expected values, checked on the Type side', () =>
 			Effect.gen(function* () {
 				const empty = 'Expected a value with a length of at least 1\n  at ';
 				expect(
 					yield* failure(Decision.make('given', membership, given({ ...none, checkedAt: '' })))
 				).toMatchObject({ step: 1, message: `the state is invalid: ${empty}["checkedAt"]` });
-				const input = Decision.make(
-					'input',
+				const command = Decision.make(
+					'command',
 					membership,
 					given(none),
 					when(Grant.make({ source: 'teachable', at: '' }, blank))
 				);
-				expect(yield* failure(input)).toMatchObject({
+				expect(yield* failure(command)).toMatchObject({
 					step: 2,
-					message: `the input is invalid: ${empty}["at"]`
+					message: `the command is invalid: ${empty}["at"]`
 				});
 				const event = Decision.make(
 					'event',
@@ -430,7 +465,7 @@ describe('Decision', () => {
 				).toMatchObject({ step: 2, message: 'invariant checkedWhenActive does not hold' });
 				const lax = Decider.make({
 					State: membership.State,
-					Input: membership.Input,
+					Command: membership.Command,
 					Event: membership.Event,
 					Rejection: membership.Rejection,
 					initial: none,
@@ -449,9 +484,9 @@ describe('Decision', () => {
 				expect(
 					yield* failure(Decision.make('throws', throwing, given(none), when(grant)))
 				).toMatchObject({ step: 2, message: 'decide threw: Error: no rule' });
-				const mutating = variant((current, input) => {
+				const mutating = variant((current, command) => {
 					Object.assign(current, { checkedAt: later });
-					return membership.decide(current, input);
+					return membership.decide(current, command);
 				});
 				expect(
 					yield* failure(Decision.make('mutates', mutating, given(none), when(grant)))
@@ -532,9 +567,9 @@ describe('Decision', () => {
 				const reached = { ...active };
 				const keeping = Decider.make({
 					...membership,
-					decide: (current, input) => {
-						if (Input.guards.Revoke(input)) Object.assign(current, { checkedAt: later });
-						return membership.decide(current, input);
+					decide: (current, command) => {
+						if (Command.guards.Revoke(command)) Object.assign(current, { checkedAt: later });
+						return membership.decide(current, command);
 					},
 					evolve: () => reached
 				});

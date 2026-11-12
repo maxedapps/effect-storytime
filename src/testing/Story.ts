@@ -3,13 +3,13 @@
  * for every command it asks for. Running it checks each step and the strict rules in between.
  */
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect';
-import { describer } from './internal/canonical.ts';
+import { describer } from '../internal/canonical.ts';
 import { Problem } from './internal/check.ts';
 import { machine } from './internal/machine.ts';
 import type { State } from './internal/machine.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
-import type { Program, Tagged } from './Program.ts';
+import type { Program, Tagged } from '../Program.ts';
 
 export type Step<Model, Message, Command> = Data.TaggedEnum<{
 	Given: { readonly model: Model };

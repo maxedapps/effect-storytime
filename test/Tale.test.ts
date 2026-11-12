@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Result, Schema } from 'effect';
-import { Decider, Decision, Exploration, Story, Tale } from '../src/index.ts';
+import { Decider } from '../src/index.ts';
+import { Decision, Exploration, Story, Tale } from '../src/testing/index.ts';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import { membership, none, NotActive, Revoke } from './examples/membership.ts';
@@ -36,7 +37,7 @@ const Stuck = Schema.TaggedUnion({ Stuck: {} });
 
 const doorRules = {
 	State: Door,
-	Input: Push,
+	Command: Push,
 	Event: Swung,
 	Rejection: Stuck,
 	initial: Door.cases.Closed.make({}),
@@ -88,9 +89,9 @@ describe('Tale', () => {
 
 	it('lists every case of a Decider, States only for a tagged union', () => {
 		expect(Tale.cases(membership)).toEqual([
-			'Input.Grant',
-			'Input.Check',
-			'Input.Revoke',
+			'Command.Grant',
+			'Command.Check',
+			'Command.Revoke',
 			'Event.Granted',
 			'Event.Checked',
 			'Event.Revoked',
@@ -101,7 +102,7 @@ describe('Tale', () => {
 		expect(Tale.cases(door)).toEqual([
 			'State.Open',
 			'State.Closed',
-			'Input.Push',
+			'Command.Push',
 			'Event.Swung',
 			'Rejection.Stuck'
 		]);
@@ -119,8 +120,8 @@ describe('Tale', () => {
 			expect(yield* Effect.flip(Tale.covers(membership, [revokes]))).toEqual(
 				new Tale.Uncovered({
 					missing: [
-						'Input.Grant',
-						'Input.Check',
+						'Command.Grant',
+						'Command.Check',
 						'Event.Granted',
 						'Event.Checked',
 						'Event.Revoked',
@@ -132,7 +133,7 @@ describe('Tale', () => {
 		})
 	);
 
-	it.effect('counts every state the events of one input pass through', () =>
+	it.effect('counts every state the events of one command pass through', () =>
 		Effect.gen(function* () {
 			const revolving = Decider.make({
 				...doorRules,
@@ -154,7 +155,7 @@ describe('Tale', () => {
 				)
 			).toEqual(
 				new Tale.Uncovered({
-					missing: ['State.Open', 'State.Closed', 'Input.Push', 'Event.Swung', 'Rejection.Stuck']
+					missing: ['State.Open', 'State.Closed', 'Command.Push', 'Event.Swung', 'Rejection.Stuck']
 				})
 			);
 		})

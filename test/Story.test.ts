@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Schema, SchemaTransformation } from 'effect';
-import { Exploration, Program, Story } from '../src/index.ts';
+import { Program } from '../src/index.ts';
+import { Exploration, Story } from '../src/testing/index.ts';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Conversation from './examples/conversation.ts';
 import * as Lamp from './examples/lamp.ts';

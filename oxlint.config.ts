@@ -183,6 +183,23 @@ export default defineConfig({
 	},
 	overrides: [
 		{
+			// The domain entry must load without the testing side (ADR 0003).
+			files: ['src/*.ts', 'src/internal/**'],
+			rules: {
+				'no-restricted-imports': [
+					'error',
+					{
+						patterns: [
+							{
+								group: ['**/testing', '**/testing/**'],
+								message: 'The domain imports nothing from testing.'
+							}
+						]
+					}
+				]
+			}
+		},
+		{
 			files: ['**/*.test.ts'],
 			env: { vitest: true },
 			rules: {

@@ -1,6 +1,6 @@
 /**
  * An exploration generates tales instead of telling one: random paths of messages, command answers
- * and restarts through a Program, or of inputs through a Decider, each checked with every strict
+ * and restarts through a Program, or of commands through a Decider, each checked with every strict
  * rule a story or decision runs except command assertions. A failing path shrinks to a short tale,
  * its counterexample.
  */
@@ -15,7 +15,7 @@ import {
 	Ref,
 	Schema
 } from 'effect';
-import type { Decider } from './Decider.ts';
+import type { Decider } from '../Decider.ts';
 import * as Decision from './Decision.ts';
 import { Broken } from './internal/check.ts';
 import type { Problem } from './internal/check.ts';
@@ -24,7 +24,7 @@ import { machine } from './internal/machine.ts';
 import type { State as Running } from './internal/machine.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
-import type { Program, Tagged } from './Program.ts';
+import type { Program, Tagged } from '../Program.ts';
 import * as Story from './Story.ts';
 
 interface Settings {
@@ -49,11 +49,11 @@ export interface Options<Model, Message, Command> extends Settings {
 	readonly restarts?: boolean;
 }
 
-export interface DecisionOptions<State, Input> extends Settings {
+export interface DecisionOptions<State, Command> extends Settings {
 	/** The states a path starts from; the Decider's `initial` by default. */
 	readonly given?: Arbitrary.Arbitrary<State>;
-	/** The inputs a path decides; by default any the Input Schema allows. */
-	readonly when?: Arbitrary.Arbitrary<Input>;
+	/** The commands a path decides; by default any the Command Schema allows. */
+	readonly when?: Arbitrary.Arbitrary<Command>;
 }
 
 /** One generated path, walked: the cases it touched, or where it broke a rule. */
@@ -105,11 +105,11 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	});
 };
 
-/** Explores a Decider: paths of inputs decided one after another from a given state. */
-export const decisions = <State, Input, Event, Rejection>(
+/** Explores a Decider: paths of commands decided one after another from a given state. */
+export const decisions = <State, Command, Event, Rejection>(
 	title: string,
-	decider: Decider<State, Input, Event, Rejection>,
-	options: DecisionOptions<NoInfer<State>, NoInfer<Input>> = {}
+	decider: Decider<State, Command, Event, Rejection>,
+	options: DecisionOptions<NoInfer<State>, NoInfer<Command>> = {}
 ): Exploration =>
 	new Exploration({
 		title,
@@ -119,7 +119,7 @@ export const decisions = <State, Input, Event, Rejection>(
 		walks: Arbitrary.map(
 			Arbitrary.all({
 				start: options.given ?? Arbitrary.Constant(decider.initial),
-				inputs: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Input))
+				commands: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Command))
 			}),
 			deciderWalker(title, decider)
 		)
@@ -251,18 +251,20 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	});
 };
 
-/** Walks a Decider's path, turning each input into a `when`, and gives the cases it touched. */
-const deciderWalker = <State, Input, Event, Rejection>(
+/** Walks a Decider's path, turning each command into a `when`, and gives the cases it touched. */
+const deciderWalker = <State, Command, Event, Rejection>(
 	title: string,
-	decider: Decider<State, Input, Event, Rejection>
+	decider: Decider<State, Command, Event, Rejection>
 ) => {
 	const rules = strict(decider);
 	const touch = caser(decider);
 	return Effect.fnUntraced(function* (path: {
 		readonly start: State;
-		readonly inputs: ReadonlyArray<Input>;
+		readonly commands: ReadonlyArray<Command>;
 	}): Effect.fn.Return<ReadonlyArray<string>, Broken> {
-		const told: Array<Decision.Step<State, Input, Event, Rejection>> = [Decision.given(path.start)];
+		const told: Array<Decision.Step<State, Command, Event, Rejection>> = [
+			Decision.given(path.start)
+		];
 		const broken = (problem: Problem) =>
 			new Broken({
 				step: told.length,
@@ -271,10 +273,10 @@ const deciderWalker = <State, Input, Event, Rejection>(
 			});
 		let state = yield* Effect.mapError(rules.check(path.start), broken);
 		const cases = [...touch.state(state)];
-		for (const input of path.inputs) {
-			told.push(Decision.when(input));
-			const ruled = yield* Effect.mapError(rules.rule(state, input), broken);
-			cases.push(...touch.ruled(input, ruled));
+		for (const command of path.commands) {
+			told.push(Decision.when(command));
+			const ruled = yield* Effect.mapError(rules.rule(state, command), broken);
+			cases.push(...touch.ruled(command, ruled));
 			state = ruled.reached;
 		}
 		return cases;

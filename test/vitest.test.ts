@@ -1,7 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect } from 'effect';
-import { Decision, Exploration, Story } from '../src/index.ts';
-import { covers, stories, tell } from '../src/vitest.ts';
+import { Decision, Exploration, Story, Vitest } from '../src/testing/index.ts';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import { membership, Memberships, none, NotActive, Revoke } from './examples/membership.ts';
@@ -48,8 +47,8 @@ const logs = Lamp.variant((current, message) => ({
 }));
 
 describe('stories and covers', () => {
-	stories(stops, switches, revokes);
-	covers(logs, [
+	Vitest.stories(stops, switches, revokes);
+	Vitest.covers(logs, [
 		Story.make(
 			'the lamp logs a switch',
 			logs,
@@ -73,8 +72,8 @@ describe('stories and covers', () => {
 describe('tell', () => {
 	it.effect('records each tale it tells in the test meta', (ctx) =>
 		Effect.gen(function* () {
-			yield* tell(ctx, stops);
-			yield* tell(ctx, switches);
+			yield* Vitest.tell(ctx, stops);
+			yield* Vitest.tell(ctx, switches);
 			expect(ctx.task.meta.storytime).toEqual([
 				{
 					kind: 'Story',
@@ -98,7 +97,7 @@ describe('tell', () => {
 
 	it.effect('records where a story failed and fails the test', (ctx) =>
 		Effect.gen(function* () {
-			const failure = yield* Effect.flip(tell(ctx, forgets));
+			const failure = yield* Effect.flip(Vitest.tell(ctx, forgets));
 			expect(failure).toBeInstanceOf(Story.StoryFailure);
 			expect(ctx.task.meta.storytime).toEqual([
 				{
@@ -122,7 +121,7 @@ describe('tell', () => {
 
 	it.effect('records only the status when another error fails the run', (ctx) =>
 		Effect.gen(function* () {
-			expect(yield* Effect.flip(tell(ctx, revokes, Effect.fail('the store is down')))).toBe(
+			expect(yield* Effect.flip(Vitest.tell(ctx, revokes, Effect.fail('the store is down')))).toBe(
 				'the store is down'
 			);
 			expect(ctx.task.meta.storytime).toEqual([
@@ -139,7 +138,7 @@ describe('tell', () => {
 
 	it.effect('records a decision run against its store', (ctx) =>
 		Effect.gen(function* () {
-			yield* tell(ctx, revokes, Decision.against(revokes, Memberships, 'u1'));
+			yield* Vitest.tell(ctx, revokes, Decision.against(revokes, Memberships, 'u1'));
 			expect(ctx.task.meta.storytime).toEqual([
 				{
 					kind: 'Decision',
@@ -147,7 +146,7 @@ describe('tell', () => {
 					lines: Decision.lines(revokes),
 					status: 'passed',
 					final: '{"active":0,"checkedAt":null,"source":"teachable"}',
-					cases: ['Input.Revoke', 'Rejection.NotActive']
+					cases: ['Command.Revoke', 'Rejection.NotActive']
 				}
 			]);
 		}).pipe(Effect.provide(Memberships.layer))

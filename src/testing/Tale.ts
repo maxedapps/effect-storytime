@@ -3,10 +3,10 @@
  * `covers` checks that a Program's or a Decider's tales together touch every one of its cases.
  */
 import { Effect, Predicate, Schema } from 'effect';
-import type { Decider } from './Decider.ts';
+import type { Decider } from '../Decider.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Tale } from './internal/tale.ts';
-import type { Program, Tagged } from './Program.ts';
+import type { Program, Tagged } from '../Program.ts';
 import type { StoryFailure } from './Story.ts';
 
 export type { Reached, Tale } from './internal/tale.ts';
@@ -25,23 +25,23 @@ const tags = (schema: Schema.Top, role: string): ReadonlyArray<string> =>
 
 /**
  * Every case a Program or a Decider has, from each of its Schemas that is a tagged union: a
- * Program's Models, Messages and Commands, a Decider's States, Inputs, Events and Rejections.
+ * Program's Models, Messages and Commands, a Decider's States, Commands, Events and Rejections.
  */
 export const cases = <
 	Model,
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	Input,
+	DeciderCommand,
 	Event,
 	Rejection
 >(
-	subject: Program<Model, Message, Command> | Decider<State, Input, Event, Rejection>
+	subject: Program<Model, Message, Command> | Decider<State, DeciderCommand, Event, Rejection>
 ): ReadonlyArray<string> =>
 	'decide' in subject
 		? [
 				...tags(subject.State, 'State'),
-				...tags(subject.Input, 'Input'),
+				...tags(subject.Command, 'Command'),
 				...tags(subject.Event, 'Event'),
 				...tags(subject.Rejection, 'Rejection')
 			]
@@ -69,11 +69,11 @@ export const covers = Effect.fnUntraced(function* <
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	Input,
+	DeciderCommand,
 	Event,
 	Rejection
 >(
-	subject: Program<Model, Message, Command> | Decider<State, Input, Event, Rejection>,
+	subject: Program<Model, Message, Command> | Decider<State, DeciderCommand, Event, Rejection>,
 	tales: ReadonlyArray<Tale>
 ): Effect.fn.Return<void, StoryFailure | Uncovered> {
 	const reached = yield* Effect.all(

@@ -1,45 +1,61 @@
 /**
- * A Decider is a pure rule for one stored row: `decide` turns a state and an input into events or a
- * rejection, `evolve` folds an event into the state. `handle` runs it on a Store in one transaction.
+ * A Decider is the command side of a consistency boundary: `decide` turns a state and a command
+ * into events or a rejection, `evolve` folds an event into the state, and named invariants say
+ * which states may exist. `handle` runs it on a Store in one transaction, which makes it an
+ * aggregate.
  */
-import { Effect } from 'effect';
-import type { Context, Option, Result, Schema } from 'effect';
-import { decideIn, rule } from './internal/store.ts';
+import { Array as Arr, Effect, Option, Schema } from 'effect';
+import type { Context, Result } from 'effect';
+import { describer } from './internal/canonical.ts';
+import { decideIn, transition } from './internal/transition.ts';
 import type { Invariants } from './Program.ts';
 
-export interface Decider<State, Input, Event, Rejection> {
+export interface Decider<State, Command, Event, Rejection> {
 	readonly State: Schema.Codec<State, unknown>;
-	readonly Input: Schema.Codec<Input, unknown>;
+	readonly Command: Schema.Codec<Command, unknown>;
 	readonly Event: Schema.Codec<Event, unknown>;
 	readonly Rejection: Schema.Codec<Rejection, unknown>;
 	/** The state of a key nothing was saved for yet. */
 	readonly initial: State;
-	readonly decide: (state: State, input: Input) => Result.Result<ReadonlyArray<Event>, Rejection>;
+	readonly decide: (
+		state: State,
+		command: Command
+	) => Result.Result<ReadonlyArray<Event>, Rejection>;
 	readonly evolve: (state: State, event: Event) => State;
 	readonly invariants: Invariants<State>;
 }
 
-export interface Definition<State, Input, Event, Rejection> {
+export interface Definition<State, Command, Event, Rejection> {
 	readonly State: Schema.Codec<State, unknown>;
-	readonly Input: Schema.Codec<Input, unknown>;
+	readonly Command: Schema.Codec<Command, unknown>;
 	readonly Event: Schema.Codec<Event, unknown>;
 	readonly Rejection: Schema.Codec<Rejection, unknown>;
 	readonly initial: State;
-	readonly decide: (state: State, input: Input) => Result.Result<ReadonlyArray<Event>, Rejection>;
+	readonly decide: (
+		state: State,
+		command: Command
+	) => Result.Result<ReadonlyArray<Event>, Rejection>;
 	readonly evolve: (state: State, event: Event) => State;
+	/** Named predicates every state must satisfy, checked by `handle` before it saves. */
 	readonly invariants?: Invariants<State>;
 }
 
-export const make = <State, Input, Event, Rejection>(
-	definition: Definition<State, Input, Event, Rejection>
-): Decider<State, Input, Event, Rejection> => ({
+export const make = <State, Command, Event, Rejection>(
+	definition: Definition<State, Command, Event, Rejection>
+): Decider<State, Command, Event, Rejection> => ({
 	...definition,
 	invariants: definition.invariants ?? {}
 });
 
 /**
- * Where a Decider's states live, such as a database table. An app implements it as a
- * `Context.Service`; `save` gets the events too, so a store may keep them.
+ * Where a Decider's states live: one row or several tables, implemented by the app as a
+ * `Context.Service`. `save` gets the events too, so a store may keep them.
+ *
+ * The contract `handle` relies on: `transaction` protects everything `load` read until `save`
+ * commits, so no concurrent command decides on the same state (SERIALIZABLE with retries, or
+ * writes guarded by a version), `load` gives back exactly what `save` stored, and `transaction` is
+ * the outermost transaction, so `handle` resolves only after its commit. Run `handle` inside no
+ * other transaction: a nested one keeps the outer isolation and commits only with it.
  */
 export interface Store<Key, State, Event, E = never> {
 	readonly load: (key: Key) => Effect.Effect<Option.Option<State>, E>;
@@ -47,18 +63,55 @@ export interface Store<Key, State, Event, E = never> {
 	readonly transaction: <A, E2, R>(effect: Effect.Effect<A, E2, R>) => Effect.Effect<A, E | E2, R>;
 }
 
+/** What `handle` committed: the events and the state they reached. */
+export interface Handled<State, Event> {
+	readonly events: ReadonlyArray<Event>;
+	readonly state: State;
+}
+
 /**
- * Handles inputs for keys of a Store service: loads the state (or `initial`), decides, folds the
- * events and saves them in one transaction. A rejection fails the Effect.
+ * The defect `handle` dies with when a command's events reach a state that breaks an invariant.
+ * It dies inside the transaction, so nothing is saved.
  */
-export const handle =
-	<State, Input, Event, Rejection, Id, Key, E>(
-		decider: Decider<State, Input, Event, Rejection>,
-		Store: Context.Key<Id, Store<Key, State, Event, E>>
-	) =>
-	(key: Key, input: Input): Effect.Effect<ReadonlyArray<Event>, Rejection | E, Id> =>
+export class InvariantBroken extends Schema.TaggedError<InvariantBroken>()('InvariantBroken', {
+	invariant: Schema.String,
+	/** The state as a line, as stories show it. */
+	state: Schema.String
+}) {
+	override get message() {
+		return `invariant ${this.invariant} does not hold for ${this.state}`;
+	}
+}
+
+/**
+ * Handles commands for keys of a Store service: loads the state (or `initial`), decides, folds the
+ * events, checks the invariants and saves, in one transaction. Resolves after the commit with the
+ * events and the state they reached; a rejection fails the Effect.
+ */
+export const handle = <State, Command, Event, Rejection, Id, Key, E>(
+	decider: Decider<State, Command, Event, Rejection>,
+	Store: Context.Key<Id, Store<Key, State, Event, E>>
+) => {
+	const show = describer(decider.State);
+	const rule = transition<State, Command, Event, Rejection, never>({
+		decide: (state, command) => Effect.sync(() => decider.decide(state, command)),
+		evolve: (state, event) => Effect.sync(() => decider.evolve(state, event)),
+		holds: (state) =>
+			Effect.suspend(() =>
+				Option.match(
+					Arr.findFirst(Object.entries(decider.invariants), ([, holds]) => !holds(state)),
+					{
+						onNone: () => Effect.void,
+						onSome: ([invariant]) =>
+							Effect.die(new InvariantBroken({ invariant, state: show(state) }))
+					}
+				)
+			)
+	});
+	return (key: Key, command: Command): Effect.Effect<Handled<State, Event>, Rejection | E, Id> =>
 		Effect.flatMap(Store, (store) =>
-			Effect.flatMap(decideIn(decider, store, rule(decider))(key, input), ({ decided }) =>
-				Effect.fromResult(decided)
+			Effect.flatMap(decideIn(decider, store, rule)(key, command), ({ decided, reached }) =>
+				Effect.map(Effect.fromResult(decided), (events) => ({ events, state: reached }))
 			)
 		);
+};

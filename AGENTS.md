@@ -1,6 +1,6 @@
 # effect-storytime
 
-An Effect 4 story-testing library (README.md). Design decisions live in `adrs/`.
+A lean Effect 4 domain library with strict story tests (README.md). Design decisions live in `adrs/`.
 
 ## Gate
 
@@ -13,7 +13,7 @@ An Effect 4 story-testing library (README.md). Design decisions live in `adrs/`.
 ## Code
 
 - Idiomatic Effect 4 at the version in the pnpm catalog; check APIs in its source, not memory.
-- Every public module is a subpath export in `package.json` and a namespace in `src/index.ts`. Internals go in `src/internal/`.
+- Two entries, each a namespace per public module: the domain in `src/index.ts` (modules in `src/`, internals in `src/internal/`) and the tales with the Vitest adapter in `src/testing/index.ts` (internals in `src/testing/internal/`). The domain imports nothing from `testing`; an oxlint `no-restricted-imports` rule enforces it.
 - Examples shared by tests live in `test/examples/`, modelled on infinite's Chat, Conversation and membership code.
 - A change to the API or the story record updates README.md; a record format change bumps `StoryReport`'s `version`.
 

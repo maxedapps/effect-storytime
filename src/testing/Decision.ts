@@ -1,23 +1,24 @@
 /**
- * A decision tells how a Decider rules, as steps: start from a state, send inputs and name the
+ * A decision tells how a Decider rules, as steps: start from a state, send commands and name the
  * events or the rejection each one gives. `run` checks it in memory with the strict rules,
  * `against` through `handle`'s transaction on a real Store.
  */
 import { Array as Arr, Data, Effect, Option, Ref, Result } from 'effect';
 import type { Context } from 'effect';
-import type { Decider, Store } from './Decider.ts';
-import { describer } from './internal/canonical.ts';
+import type { Decider, Store } from '../Decider.ts';
+import { describer } from '../internal/canonical.ts';
 import { attempt, Problem } from './internal/check.ts';
 import { caser, checks, strict } from './internal/decider.ts';
-import type { Decided, Ruled } from './internal/decider.ts';
-import { decideIn, loadOrInitial } from './internal/store.ts';
+import type { Decided } from './internal/decider.ts';
+import { decideIn, loadOrInitial } from '../internal/transition.ts';
+import type { Transition } from '../internal/transition.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import { StoryFailure } from './Story.ts';
 
-export type Step<State, Input, Event, Rejection> = Data.TaggedEnum<{
+export type Step<State, Command, Event, Rejection> = Data.TaggedEnum<{
 	Given: { readonly state: State };
-	When: { readonly input: Input };
+	When: { readonly command: Command };
 	Accepted: { readonly events: ReadonlyArray<Event> };
 	Rejected: { readonly rejection: Rejection };
 	State: { readonly expected: State };
@@ -31,51 +32,51 @@ interface StepDefinition extends Data.TaggedEnum.WithGenerics<4> {
 const Step = Data.taggedEnum<StepDefinition>();
 
 /** Starts the decision from a state. It comes first and only once. */
-export const given = <State = never, Input = never, Event = never, Rejection = never>(
+export const given = <State = never, Command = never, Event = never, Rejection = never>(
 	state: NoInfer<State>
-): Step<State, Input, Event, Rejection> => Step.Given({ state });
+): Step<State, Command, Event, Rejection> => Step.Given({ state });
 
-/** Decides an input. The next step names its events or its rejection. */
-export const when = <State = never, Input = never, Event = never, Rejection = never>(
-	input: NoInfer<Input>
-): Step<State, Input, Event, Rejection> => Step.When({ input });
+/** Decides a command. The next step names its events or its rejection. */
+export const when = <State = never, Command = never, Event = never, Rejection = never>(
+	command: NoInfer<Command>
+): Step<State, Command, Event, Rejection> => Step.When({ command });
 
-/** Requires the input to give exactly these events, in this order; `accepted()` means none. */
-export const accepted = <State = never, Input = never, Event = never, Rejection = never>(
+/** Requires the command to give exactly these events, in this order; `accepted()` means none. */
+export const accepted = <State = never, Command = never, Event = never, Rejection = never>(
 	...events: ReadonlyArray<NoInfer<Event>>
-): Step<State, Input, Event, Rejection> => Step.Accepted({ events });
+): Step<State, Command, Event, Rejection> => Step.Accepted({ events });
 
-/** Requires the input to be rejected with `rejection`. */
-export const rejected = <State = never, Input = never, Event = never, Rejection = never>(
+/** Requires the command to be rejected with `rejection`. */
+export const rejected = <State = never, Command = never, Event = never, Rejection = never>(
 	rejection: NoInfer<Rejection>
-): Step<State, Input, Event, Rejection> => Step.Rejected({ rejection });
+): Step<State, Command, Event, Rejection> => Step.Rejected({ rejection });
 
 /** Requires the state to equal `expected`. */
-export const state = <State = never, Input = never, Event = never, Rejection = never>(
+export const state = <State = never, Command = never, Event = never, Rejection = never>(
 	expected: NoInfer<State>
-): Step<State, Input, Event, Rejection> => Step.State({ expected });
+): Step<State, Command, Event, Rejection> => Step.State({ expected });
 
 /** Requires the state to pass a check, shown in lines by its label. */
-export const satisfies = <State = never, Input = never, Event = never, Rejection = never>(
+export const satisfies = <State = never, Command = never, Event = never, Rejection = never>(
 	label: string,
 	check: (current: NoInfer<State>) => boolean
-): Step<State, Input, Event, Rejection> => Step.Satisfies({ label, check });
+): Step<State, Command, Event, Rejection> => Step.Satisfies({ label, check });
 
-export class Decision<State, Input, Event, Rejection> extends Data.TaggedClass('Decision')<{
+export class Decision<State, Command, Event, Rejection> extends Data.TaggedClass('Decision')<{
 	readonly title: string;
-	readonly decider: Decider<State, Input, Event, Rejection>;
-	readonly steps: ReadonlyArray<Step<State, Input, Event, Rejection>>;
+	readonly decider: Decider<State, Command, Event, Rejection>;
+	readonly steps: ReadonlyArray<Step<State, Command, Event, Rejection>>;
 }> {
 	[TypeId](): Told {
 		return { subject: this.decider, lines: lines(this), run: run(this) };
 	}
 }
 
-export const make = <State, Input, Event, Rejection>(
+export const make = <State, Command, Event, Rejection>(
 	title: string,
-	decider: Decider<State, Input, Event, Rejection>,
-	...body: ReadonlyArray<Step<State, Input, Event, Rejection>>
-): Decision<State, Input, Event, Rejection> => new Decision({ title, decider, steps: body });
+	decider: Decider<State, Command, Event, Rejection>,
+	...body: ReadonlyArray<Step<State, Command, Event, Rejection>>
+): Decision<State, Command, Event, Rejection> => new Decision({ title, decider, steps: body });
 
 /** What a passing decision reached: its final state, also as a line, and the cases it touched. */
 export interface Outcome<State> {
@@ -84,17 +85,17 @@ export interface Outcome<State> {
 	readonly cases: ReadonlyArray<string>;
 }
 
-const liner = <State, Input, Event, Rejection>(
-	decider: Decider<State, Input, Event, Rejection>
+const liner = <State, Command, Event, Rejection>(
+	decider: Decider<State, Command, Event, Rejection>
 ) => {
 	const showState = describer(decider.State);
-	const showInput = describer(decider.Input);
+	const showCommand = describer(decider.Command);
 	const showEvent = describer(decider.Event);
 	const showRejection = describer(decider.Rejection);
-	return (step: Step<State, Input, Event, Rejection>) =>
+	return (step: Step<State, Command, Event, Rejection>) =>
 		Step.$match(step, {
 			Given: ({ state: start }) => `given ${showState(start)}`,
-			When: ({ input }) => `when ${showInput(input)}`,
+			When: ({ command }) => `when ${showCommand(command)}`,
 			Accepted: ({ events }) =>
 				`accepted ${events.length === 0 ? 'none' : events.map(showEvent).join(', ')}`,
 			Rejected: ({ rejection }) => `rejected ${showRejection(rejection)}`,
@@ -104,22 +105,25 @@ const liner = <State, Input, Event, Rejection>(
 };
 
 /** Renders a decision as plain lines, from its value alone. */
-export const lines = <State, Input, Event, Rejection>(
-	decision: Decision<State, Input, Event, Rejection>
+export const lines = <State, Command, Event, Rejection>(
+	decision: Decision<State, Command, Event, Rejection>
 ): ReadonlyArray<string> => decision.steps.map(liner(decision.decider));
 
 /** Where a decision's state lives, in memory or in a Store, checked by the strict rules either way. */
-interface Backend<State, Input, Event, Rejection, E> {
-	readonly seed: (state: State) => Effect.Effect<void, Problem | E>;
-	readonly decide: (input: Input) => Effect.Effect<Ruled<State, Event, Rejection>, Problem | E>;
+interface Backend<State, Command, Event, Rejection, E> {
+	/** Puts the given state in place, where the backend owns it; `current` must equal it after. */
+	readonly start: (state: State) => Effect.Effect<void, Problem | E>;
+	readonly decide: (
+		command: Command
+	) => Effect.Effect<Transition<State, Event, Rejection>, Problem | E>;
 	readonly current: Effect.Effect<State, Problem | E>;
 }
 
 const isProblem = (error: unknown): error is Problem => error instanceof Problem;
 
-const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
-	decision: Decision<State, Input, Event, Rejection>,
-	backend: Backend<State, Input, Event, Rejection, E>
+const tell = Effect.fnUntraced(function* <State, Command, Event, Rejection, E>(
+	decision: Decision<State, Command, Event, Rejection>,
+	backend: Backend<State, Command, Event, Rejection, E>
 ): Effect.fn.Return<Outcome<State>, StoryFailure | E> {
 	const { decider, title } = decision;
 	const line = liner(decider);
@@ -155,10 +159,30 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 	const current = (check: (state: State) => Effect.Effect<void, Problem>) =>
 		Effect.flatMap(backend.current, check);
 
+	const same = (expected: State, message: string) =>
+		Effect.andThen(
+			the.state.valid(expected),
+			current((actual) =>
+				Effect.flatMap(
+					Effect.all([the.state.key(expected), the.state.key(actual)]),
+					([wanted, got]) =>
+						wanted === got
+							? Effect.void
+							: Effect.fail(
+									new Problem({
+										message,
+										expected: the.state.show(expected),
+										actual: the.state.show(actual)
+									})
+								)
+				)
+			)
+		);
+
 	const step = (
 		index: number,
 		decided: Option.Option<Decided<Event, Rejection>>,
-		next: Step<State, Input, Event, Rejection>
+		next: Step<State, Command, Event, Rejection>
 	): Effect.Effect<Option.Option<Decided<Event, Rejection>>, Problem | E> =>
 		Option.isSome(decided) && !Step.$is('Accepted')(next) && !Step.$is('Rejected')(next)
 			? Effect.fail(new Problem({ message: unanswered }))
@@ -166,13 +190,18 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 					Given: ({ state: start }) =>
 						index === 0
 							? Effect.as(
-									Effect.andThen(backend.seed(start), note(touch.state(start))),
+									backend
+										.start(start)
+										.pipe(
+											Effect.andThen(same(start, 'the stored state differs from given')),
+											Effect.andThen(note(touch.state(start)))
+										),
 									Option.none()
 								)
 							: Effect.fail(new Problem({ message: 'given(state) comes once, first' })),
-					When: ({ input }) =>
-						Effect.flatMap(backend.decide(input), (ruled) =>
-							Effect.as(note(touch.ruled(input, ruled)), Option.some(ruled.decided))
+					When: ({ command }) =>
+						Effect.flatMap(backend.decide(command), (ruled) =>
+							Effect.as(note(touch.ruled(command, ruled)), Option.some(ruled.decided))
 						),
 					Accepted: ({ events }) =>
 						answer(decided, 'accepted', (result) =>
@@ -182,7 +211,7 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 									onFailure: (rejection) =>
 										Effect.fail(
 											new Problem({
-												message: 'the input was rejected',
+												message: 'the command was rejected',
 												expected: eventLines(events),
 												actual: the.rejection.show(rejection)
 											})
@@ -226,7 +255,7 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 									onSuccess: (events) =>
 										Effect.fail(
 											new Problem({
-												message: 'the input was accepted',
+												message: 'the command was accepted',
 												expected: the.rejection.show(rejection),
 												actual: eventLines(events)
 											})
@@ -234,28 +263,7 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 								})
 							)
 						),
-					State: ({ expected }) =>
-						Effect.as(
-							Effect.andThen(
-								the.state.valid(expected),
-								current((actual) =>
-									Effect.flatMap(
-										Effect.all([the.state.key(expected), the.state.key(actual)]),
-										([wanted, got]) =>
-											wanted === got
-												? Effect.void
-												: Effect.fail(
-														new Problem({
-															message: 'the state differs',
-															expected: the.state.show(expected),
-															actual: the.state.show(actual)
-														})
-													)
-									)
-								)
-							),
-							decided
-						),
+					State: ({ expected }) => Effect.as(same(expected, 'the state differs'), decided),
 					Satisfies: ({ label, check }) =>
 						Effect.as(
 							current((actual) =>
@@ -304,16 +312,16 @@ const tell = Effect.fnUntraced(function* <State, Input, Event, Rejection, E>(
 });
 
 /** Keeps the state in memory. */
-const memory = Effect.fnUntraced(function* <State, Input, Event, Rejection>(
-	decider: Decider<State, Input, Event, Rejection>
+const memory = Effect.fnUntraced(function* <State, Command, Event, Rejection>(
+	decider: Decider<State, Command, Event, Rejection>
 ) {
 	const rules = strict(decider);
 	const stored = yield* Ref.make(decider.initial);
-	const backend: Backend<State, Input, Event, Rejection, never> = {
-		seed: (start) => Effect.flatMap(rules.check(start), (copy) => Ref.set(stored, copy)),
-		decide: (input) =>
+	const backend: Backend<State, Command, Event, Rejection, never> = {
+		start: (first) => Effect.flatMap(rules.check(first), (copy) => Ref.set(stored, copy)),
+		decide: (command) =>
 			Effect.tap(
-				Effect.flatMap(Ref.get(stored), (current) => rules.rule(current, input)),
+				Effect.flatMap(Ref.get(stored), (current) => rules.rule(current, command)),
 				({ reached }) => Ref.set(stored, reached)
 			),
 		current: Ref.get(stored)
@@ -322,18 +330,19 @@ const memory = Effect.fnUntraced(function* <State, Input, Event, Rejection>(
 });
 
 /** Runs a decision in memory: every step and every strict rule. */
-export const run = <State, Input, Event, Rejection>(
-	decision: Decision<State, Input, Event, Rejection>
+export const run = <State, Command, Event, Rejection>(
+	decision: Decision<State, Command, Event, Rejection>
 ): Effect.Effect<Outcome<State>, StoryFailure> =>
 	Effect.flatMap(memory(decision.decider), (backend) => tell(decision, backend));
 
 /**
  * Runs a decision through `handle`'s transaction on a real Store, under `key`, with every strict
- * rule: `given` saves its state, each `when` decides and saves, and `state` loads and checks what
- * the Store gives back. Store errors fail as they are.
+ * rule. The test arranges the Store beforehand: `given` loads the state under `key` (or `initial`)
+ * and fails unless it equals the given state. Each `when` decides and saves, and `state` loads and
+ * checks what the Store gives back. Store errors fail as they are.
  */
-export const against = <State, Input, Event, Rejection, Id, Key, E>(
-	decision: Decision<State, Input, Event, Rejection>,
+export const against = <State, Command, Event, Rejection, Id, Key, E>(
+	decision: Decision<State, Command, Event, Rejection>,
 	Store: Context.Key<Id, Store<Key, State, Event, E>>,
 	key: Key
 ): Effect.Effect<Outcome<State>, StoryFailure | E, Id> =>
@@ -341,9 +350,8 @@ export const against = <State, Input, Event, Rejection, Id, Key, E>(
 		const rules = strict(decision.decider);
 		const decide = decideIn(decision.decider, store, rules.rule);
 		return tell(decision, {
-			seed: (start) =>
-				Effect.flatMap(rules.check(start), (copy) => store.transaction(store.save(key, copy, []))),
-			decide: (input) => decide(key, input),
+			start: () => Effect.void,
+			decide: (command) => decide(key, command),
 			current: Effect.flatMap(loadOrInitial(decision.decider, store, key), rules.check)
 		});
 	});

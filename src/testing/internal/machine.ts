@@ -3,8 +3,8 @@
  * step takes the state so far and gives the next, or fails with a Problem.
  */
 import { Effect, identity, Option } from 'effect';
-import type { Next, Program, Tagged } from '../Program.ts';
-import { tagger } from './canonical.ts';
+import type { Next, Program, Tagged } from '../../Program.ts';
+import { tagger } from '../../internal/canonical.ts';
 import { attempt, holds, Problem, pure, role } from './check.ts';
 
 interface Pending<Command> {

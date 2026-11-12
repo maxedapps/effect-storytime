@@ -12,12 +12,12 @@ export const Membership = Schema.Struct({
 });
 export type Membership = typeof Membership.Type;
 
-export const Input = Schema.TaggedUnion({
+export const Command = Schema.TaggedUnion({
 	Grant: { source: Source, at: Schema.NonEmptyString },
 	Check: { active: Schema.Boolean, at: Schema.NonEmptyString },
 	Revoke: {}
 });
-export type Input = typeof Input.Type;
+export type Command = typeof Command.Type;
 
 export const Event = Schema.TaggedUnion({
 	Granted: { source: Source, at: Schema.NonEmptyString },
@@ -33,15 +33,15 @@ export const Rejection = Schema.TaggedUnion({
 });
 export type Rejection = typeof Rejection.Type;
 
-export const { Grant, Check, Revoke } = Input.cases;
+export const { Grant, Check, Revoke } = Command.cases;
 export const { Granted, Checked, Revoked } = Event.cases;
 export const { AlreadyActive, NotActive, Manual } = Rejection.cases;
 
 const decide = (
 	current: Membership,
-	input: Input
+	command: Command
 ): Result.Result<ReadonlyArray<Event>, Rejection> =>
-	Input.match(input, {
+	Command.match(command, {
 		Grant: ({ source, at }) =>
 			current.active
 				? Result.fail(AlreadyActive.make({ since: current.checkedAt }))
@@ -65,7 +65,7 @@ export const none: Membership = { source: 'teachable', active: false, checkedAt:
 
 export const membership = Decider.make({
 	State: Membership,
-	Input,
+	Command,
 	Event,
 	Rejection,
 	initial: none,
@@ -76,7 +76,7 @@ export const membership = Decider.make({
 
 /** The membership with another `decide`, keeping the rest. */
 export const variant = (
-	other: (current: Membership, input: Input) => Result.Result<ReadonlyArray<Event>, Rejection>
+	other: (current: Membership, command: Command) => Result.Result<ReadonlyArray<Event>, Rejection>
 ) => Decider.make({ ...membership, decide: other });
 
 export const at = '2026-11-03T00:00:00.000Z';

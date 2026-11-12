@@ -1,8 +1,11 @@
 {
 	"name": "effect-storytime",
 	"version": "0.2.0",
-	"description": "Effect-native story testing: pure state machines whose side effects are Schema data, told and checked as strict stories.",
+	"description": "Lean domain modelling for Effect 4: Deciders and Programs as pure state machines, told and checked as strict stories.",
 	"keywords": [
+		"ddd",
+		"decider",
+		"domain-driven-design",
 		"effect",
 		"effect-ts",
 		"property-based-testing",
@@ -28,16 +31,7 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./dist/index.js",
-		"./Decider": "./dist/Decider.js",
-		"./Decision": "./dist/Decision.js",
-		"./Exploration": "./dist/Exploration.js",
-		"./Loop": "./dist/Loop.js",
-		"./Program": "./dist/Program.js",
-		"./Story": "./dist/Story.js",
-		"./Tale": "./dist/Tale.js",
-		"./StoryRecord": "./dist/StoryRecord.js",
-		"./reporter": "./dist/reporter.js",
-		"./vitest": "./dist/vitest.js"
+		"./testing": "./dist/testing/index.js"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",

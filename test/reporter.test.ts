@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { createVitest } from 'vitest/node';
-import { StoryReporter } from '../src/reporter.ts';
-import type { Options } from '../src/reporter.ts';
-import * as StoryRecord from '../src/StoryRecord.ts';
+import { StoryRecord, Vitest } from '../src/testing/index.ts';
 
 const root = fileURLToPath(new URL('fixtures/report', import.meta.url));
 
@@ -15,14 +13,14 @@ const root = fileURLToPath(new URL('fixtures/report', import.meta.url));
  * Runs the fixture stories in their two projects and reads the report the reporter wrote;
  * `reversed` tells a test's tales in the opposite order.
  */
-const report = (options: Options, reversed: boolean) =>
+const report = (options: Vitest.ReporterOptions, reversed: boolean) =>
 	Effect.promise(async () => {
 		const vitest = await createVitest({
 			root,
 			config: join(root, 'vitest.config.ts'),
 			watch: false,
 			env: { STORYTIME_REVERSED: reversed ? '1' : '0' },
-			reporters: [new StoryReporter(options)]
+			reporters: [new Vitest.Reporter(options)]
 		});
 		await vitest.start();
 		await vitest.close();
@@ -37,7 +35,7 @@ const scratch = Effect.acquireRelease(
 	(dir) => Effect.promise(() => rm(dir, { recursive: true }))
 );
 
-describe('StoryReporter', () => {
+describe('Vitest.Reporter', () => {
 	it.effect(
 		'writes every told tale, sorted, the same whatever order they were told in',
 		() =>
@@ -57,15 +55,15 @@ describe('StoryReporter', () => {
 
 	it.effect('reads back only a report of a version it knows', () =>
 		Effect.gen(function* () {
-			const failure = yield* Effect.flip(StoryRecord.decode('{"version":2,"stories":[]}'));
-			expect(failure.message).toBe('Expected 1\n  at ["version"]');
+			const failure = yield* Effect.flip(StoryRecord.decode('{"version":1,"stories":[]}'));
+			expect(failure.message).toBe('Expected 2\n  at ["version"]');
 		})
 	);
 
 	it.effect('reads back only records it knows', () =>
 		Effect.gen(function* () {
 			const failure = yield* Effect.flip(
-				StoryRecord.decode('{"version":1,"stories":[{"kind":"Saga"}]}')
+				StoryRecord.decode('{"version":2,"stories":[{"kind":"Saga"}]}')
 			);
 			expect(failure.message).toContain('at ["stories"][0]["kind"]');
 		})

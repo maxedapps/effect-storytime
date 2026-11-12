@@ -1,9 +1,17 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Result, Schema } from 'effect';
-import { Decider, Exploration, Program, Story } from '../src/index.ts';
+import { Decider, Program } from '../src/index.ts';
+import { Exploration, Story } from '../src/testing/index.ts';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
-import { at, Grant, Input, membership, Revoke, variant } from './examples/membership.ts';
+import {
+	at,
+	Grant,
+	Command as MembershipCommand,
+	membership,
+	Revoke,
+	variant
+} from './examples/membership.ts';
 
 const { Asked, Delta, Answered, Refused, Stopped } = Message.cases;
 
@@ -322,7 +330,7 @@ describe('Exploration', () => {
 		})
 	);
 
-	it.effect('decides any input the Input Schema allows from the initial state by default', () =>
+	it.effect('decides any command the Command Schema allows from the initial state by default', () =>
 		Effect.gen(function* () {
 			const explored = Exploration.decisions('memberships', membership);
 			expect(Exploration.lines(explored)).toEqual([
@@ -331,12 +339,12 @@ describe('Exploration', () => {
 			expect(yield* Exploration.check(explored)).toEqual({
 				runs: 100,
 				cases: [
+					'Command.Check',
+					'Command.Grant',
+					'Command.Revoke',
 					'Event.Checked',
 					'Event.Granted',
 					'Event.Revoked',
-					'Input.Check',
-					'Input.Grant',
-					'Input.Revoke',
 					'Rejection.AlreadyActive',
 					'Rejection.Manual',
 					'Rejection.NotActive'
@@ -345,7 +353,7 @@ describe('Exploration', () => {
 		})
 	);
 
-	it.effect('starts from the given states and decides the given inputs', () =>
+	it.effect('starts from the given states and decides the given commands', () =>
 		Effect.gen(function* () {
 			const revokes = Exploration.decisions('revokes', membership, {
 				given: Arbitrary.Constant({ source: 'teachable', active: true, checkedAt: at }),
@@ -356,16 +364,16 @@ describe('Exploration', () => {
 			});
 			expect(yield* Exploration.check(revokes)).toEqual({
 				runs: 3,
-				cases: ['Event.Revoked', 'Input.Revoke', 'Rejection.NotActive']
+				cases: ['Command.Revoke', 'Event.Revoked', 'Rejection.NotActive']
 			});
 		})
 	);
 
 	it.effect('shrinks a throwing decide to the shortest decision that throws', () =>
 		Effect.gen(function* () {
-			const throwing = variant((current, input) => {
-				if (current.active && Input.guards.Revoke(input)) throw new Error('revoked');
-				return membership.decide(current, input);
+			const throwing = variant((current, command) => {
+				if (current.active && MembershipCommand.guards.Revoke(command)) throw new Error('revoked');
+				return membership.decide(current, command);
 			});
 			const failure = yield* Effect.flip(
 				Exploration.check(
@@ -401,7 +409,7 @@ describe('Exploration', () => {
 			const Push = Schema.TaggedUnion({ Push: {} });
 			const door = Decider.make({
 				State: Door,
-				Input: Push,
+				Command: Push,
 				Event: Push,
 				Rejection: Push,
 				initial: Door.cases.Closed.make({}),

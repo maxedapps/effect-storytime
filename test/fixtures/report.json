@@ -1,5 +1,5 @@
 {
-	"version": 1,
+	"version": 2,
 	"stories": [
 		{
 			"kind": "Exploration",
@@ -35,7 +35,7 @@
 			"status": "passed",
 			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
 			"cases": [
-				"Input.Revoke",
+				"Command.Revoke",
 				"Rejection.NotActive"
 			]
 		},
@@ -76,7 +76,7 @@
 			"status": "passed",
 			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
 			"cases": [
-				"Input.Revoke",
+				"Command.Revoke",
 				"Rejection.NotActive"
 			]
 		},

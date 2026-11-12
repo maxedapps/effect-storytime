@@ -1,14 +1,17 @@
 /**
  * Tells tales as Vitest tests through `@effect/vitest`. Each told tale leaves its record in the
- * test's meta, where the story reporter collects it.
+ * test's meta, where the `Reporter` collects it into one JSON file, the `StoryReport`.
  */
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, posix, resolve } from 'node:path';
 import { it } from '@effect/vitest';
-import { Cause, Effect, Exit, Option, Schema } from 'effect';
+import { Array as Arr, Cause, Effect, Exit, Option, Order, Schema } from 'effect';
 import type { TestContext } from 'vitest';
-import type { Decider } from './Decider.ts';
-import type { Program, Tagged } from './Program.ts';
+import type { Reporter as VitestReporter, TestModule, Vitest } from 'vitest/node';
+import type { Decider } from '../Decider.ts';
+import type { Program, Tagged } from '../Program.ts';
 import * as Story from './Story.ts';
-import type { StoryRecord } from './StoryRecord.ts';
+import type { StoryRecord, StoryReport } from './StoryRecord.ts';
 import * as Tale from './Tale.ts';
 
 /** A tale's record before the reporter adds the file and test that told it. */
@@ -78,12 +81,60 @@ export const covers = <
 	Message extends Tagged,
 	Command extends Tagged,
 	State,
-	Input,
+	DeciderCommand,
 	Event,
 	Rejection
 >(
-	subject: Program<Model, Message, Command> | Decider<State, Input, Event, Rejection>,
+	subject: Program<Model, Message, Command> | Decider<State, DeciderCommand, Event, Rejection>,
 	tales: ReadonlyArray<Tale.Tale>
 ): void => {
 	it.effect('its tales touch every case', () => Tale.covers(subject, tales));
 };
+
+export interface ReporterOptions {
+	/** Where to write the report, relative to the Vitest root; `stories.json` by default. */
+	readonly outputFile?: string;
+}
+
+/** By file and test, then by content, as a test's concurrent tales finish in any order. */
+const byPlace = Order.combineAll([
+	Order.mapInput(Order.String, (record: StoryRecord) => record.file),
+	Order.mapInput(Order.String, (record: StoryRecord) => record.test),
+	Order.mapInput(Order.String, (record: StoryRecord) => JSON.stringify(record))
+]);
+
+/** Writes the run's story records to one JSON file, the `StoryReport`; the same tests give the same bytes. */
+export class Reporter implements VitestReporter {
+	readonly #outputFile: string;
+	#root!: string;
+
+	constructor(options: ReporterOptions = {}) {
+		this.#outputFile = options.outputFile ?? 'stories.json';
+	}
+
+	onInit(vitest: Vitest) {
+		this.#root = vitest.config.root;
+	}
+
+	async onTestRunEnd(modules: ReadonlyArray<TestModule>) {
+		const records = modules.flatMap((module) =>
+			Array.from(module.children.allTests()).flatMap((test) =>
+				(test.meta().storytime ?? []).map((tale: Told): StoryRecord => ({
+					kind: tale.kind,
+					title: tale.title,
+					file: posix.relative(this.#root, module.moduleId),
+					test: test.fullName,
+					lines: tale.lines,
+					status: tale.status,
+					final: tale.final,
+					failure: tale.failure,
+					cases: tale.cases
+				}))
+			)
+		);
+		const path = resolve(this.#root, this.#outputFile);
+		await mkdir(dirname(path), { recursive: true });
+		const report: StoryReport = { version: 2, stories: Arr.sort(records, byPlace) };
+		await writeFile(path, `${JSON.stringify(report, null, '\t')}\n`);
+	}
+}

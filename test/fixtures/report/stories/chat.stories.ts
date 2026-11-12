@@ -1,13 +1,12 @@
 import { describe } from '@effect/vitest';
-import { Story } from '../../../../src/index.ts';
-import { stories } from '../../../../src/vitest.ts';
+import { Story, Vitest } from '../../../../src/testing/index.ts';
 import { chat, Command, Message, ready } from '../../../examples/chat.ts';
 
 const { Asked, Stopped } = Message.cases;
 const asked = Asked.make({ turn: 't1', text: 'Why?' });
 
 describe('chat', () => {
-	stories(
+	Vitest.stories(
 		Story.make(
 			'a question is stopped',
 			chat,
