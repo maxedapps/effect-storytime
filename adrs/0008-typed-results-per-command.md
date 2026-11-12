@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-Task 3316 (analysis `effect-storytime-3316-alchemy-domain-analysis`, recommendation 2, approved in #46582). `decide(state, command)` was one function, so `Decider.handle`'s error was every rejection of the Decider. A caller that sends one command must still handle the rejections only other commands give. infinite narrows them by hand and dies on the rest (`decideSeatPool(key, command, ['OfferNotFound'])`, `decideListing`), so a new rejection on a command becomes a 500, not a compile error.
+Task 3316 (task 3316's domain analysis, recommendation 2, approved in #46582). `decide(state, command)` was one function, so `Decider.handle`'s error was every rejection of the Decider. A caller that sends one command must still handle the rejections only other commands give. infinite narrows them by hand and dies on the rest (`decideSeatPool(key, command, ['OfferNotFound'])`, `decideListing`), so a new rejection on a command becomes a 500, not a compile error.
 
 ## Decision
 

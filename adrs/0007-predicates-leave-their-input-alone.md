@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-Task 3316 (analysis `effect-storytime-3316-alchemy-domain-analysis`, approved in #46582):
+Task 3316 (task 3316's domain analysis, approved in #46582):
 
 - **Predicates see live values.** Stories hand `satisfies` and the invariants the model a story keeps, explorations hand properties the settled model, and `Decision.run` hands `satisfies` the state it keeps. A predicate that assigns a field rewrites the tale's own value, so a later `model(...)` passes on a value `update` never gave. In production, `Loop` and `Decider.handle` share `internal/invariants.ts`, which hands each invariant the model or state about to be saved, so a mutating invariant changes what is saved.
 - **Identical commands.** A story keeps pending commands by canonical JSON, so two identical commands in one `update` are one pending command. The 0.5.0 Loop runs every listed command: an identical work command starts twice (the second replaces the first), and an identical write runs twice.
