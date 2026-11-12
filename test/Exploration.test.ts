@@ -81,7 +81,7 @@ describe('Exploration', () => {
 					title: 'the lamp counts switches',
 					step: 2,
 					line: Exploration.lines(counts)[0] ?? '',
-					message: 'invariant countIsSmall does not hold',
+					problem: 'invariant countIsSmall does not hold',
 					expected: undefined,
 					actual: '{"at":"2026-11-04T00:00:00.000Z","count":10,"on":1}',
 					counterexample: [given, sent(10)],
@@ -121,7 +121,7 @@ describe('Exploration', () => {
 					title: 'fixed',
 					step: 1,
 					line: 'explore 100 runs of up to 30 steps, seed "fixed", with restarts',
-					message: 'Property replay failed: PropertyPassed'
+					problem: 'Property replay failed: PropertyPassed'
 				})
 			);
 		})
@@ -136,8 +136,16 @@ describe('Exploration', () => {
 			const failure = yield* Effect.flip(
 				Exploration.check(Exploration.make('throws', throwing, { given: off, send: switches }))
 			);
-			expect(failure.message).toBe('update threw: Error: three');
 			expect(failure.counterexample).toEqual([given, sent(3)]);
+			expect(failure.message).toBe(
+				[
+					'update threw: Error: three',
+					'step 2 of the counterexample:',
+					`  1 ${given}`,
+					`> 2 ${sent(3)}`,
+					'replay: [1,"throws",8,2,[1],"PropertyError"]'
+				].join('\n')
+			);
 		})
 	);
 
@@ -149,7 +157,7 @@ describe('Exploration', () => {
 			});
 			const mutates = Exploration.make('mutates', mutating, { given: off, send: switches });
 			const failure = yield* Effect.flip(Exploration.check(mutates));
-			expect(failure.message).toBe('update changed its input');
+			expect(failure.problem).toBe('update changed its input');
 			expect(failure.counterexample?.[0]).toBe(given);
 			const replayed = yield* Effect.flip(
 				Exploration.check(mutates, { replay: failure.replay ?? '' })
@@ -175,7 +183,7 @@ describe('Exploration', () => {
 				send: switches
 			});
 			const failure = yield* Effect.flip(Exploration.check(mutates));
-			expect(failure.message).toBe('update changed its input');
+			expect(failure.problem).toBe('update changed its input');
 			expect(failure.counterexample?.[0]).toBe('given {"nested":{"count":0}}');
 			expect(start).toEqual({ nested: { count: 0 } });
 			const replayed = yield* Effect.flip(
@@ -228,7 +236,7 @@ describe('Exploration', () => {
 				)
 			);
 			expect(failure.step).toBe(1);
-			expect(failure.message).toBe('invariant countIsSmall does not hold');
+			expect(failure.problem).toBe('invariant countIsSmall does not hold');
 		})
 	);
 
@@ -262,7 +270,7 @@ describe('Exploration', () => {
 					})
 				)
 			);
-			expect(failure.message).toMatch(/^Property exhausted after 0 run\(s\)/);
+			expect(failure.problem).toMatch(/^Property exhausted after 0 run\(s\)/);
 		})
 	);
 
@@ -389,7 +397,7 @@ describe('Exploration', () => {
 					title: 'throws',
 					step: 3,
 					line: 'explore 100 runs of up to 30 steps, seed "throws"',
-					message: 'decide threw: Error: revoked',
+					problem: 'decide threw: Error: revoked',
 					expected: undefined,
 					actual: undefined,
 					counterexample: [
@@ -432,7 +440,7 @@ describe('Exploration', () => {
 				)
 			);
 			expect(failure.step).toBe(1);
-			expect(failure.message).toBe('invariant checkedWhenActive does not hold');
+			expect(failure.problem).toBe('invariant checkedWhenActive does not hold');
 			expect(failure.counterexample).toEqual([
 				'given {"active":1,"checkedAt":null,"source":"teachable"}'
 			]);

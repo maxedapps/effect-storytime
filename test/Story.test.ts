@@ -8,7 +8,10 @@ import * as Lamp from './examples/lamp.ts';
 
 const { Asked, Delta, Answered, Stopped } = Message.cases;
 const { Ask, SaveTurn } = Command.cases;
-const { given, send, model, satisfies, commands, resolve, emit, restart, anyOrder, steps } = Story;
+const { given, send, model, satisfies, commands, resolve, emit, restart, anyOrder, steps } =
+	Story.of(chat);
+const conversation = Story.of(Conversation.conversation);
+const lamp = Story.of(Lamp.lamp);
 
 const asked = Asked.make({ turn: 't1', text: 'Why Effect?' });
 const ask = Ask.make({ turn: 't1', text: 'Why Effect?' });
@@ -90,15 +93,17 @@ describe('Story', () => {
 		const story = Story.make(
 			'recall in any order',
 			Conversation.conversation,
-			given(Conversation.idle),
-			steps(send(Conversation.Message.cases.Started.make({ turn: 't1' }))),
-			anyOrder(
-				send(Conversation.Message.cases.Recall.make({ turn: 't1' })),
-				resolve(Conversation.Command.cases.RunStep.make({ turn: 't1', step: 0 }))
+			conversation.given(Conversation.idle),
+			conversation.steps(
+				conversation.send(Conversation.Message.cases.Started.make({ turn: 't1' }))
 			),
-			commands(),
-			satisfies('recalled', Conversation.Phase.guards.Recalled),
-			restart()
+			conversation.anyOrder(
+				conversation.send(Conversation.Message.cases.Recall.make({ turn: 't1' })),
+				conversation.resolve(Conversation.Command.cases.RunStep.make({ turn: 't1', step: 0 }))
+			),
+			conversation.commands(),
+			conversation.satisfies('recalled', Conversation.Phase.guards.Recalled),
+			conversation.restart()
 		);
 		expect(Story.lines(story)).toEqual([
 			'given Idle',
@@ -118,11 +123,11 @@ describe('Story', () => {
 				expect(yield* failure(Story.make('empty', chat))).toMatchObject({
 					step: 1,
 					line: '',
-					message: 'a story starts with given(model)'
+					problem: 'a story starts with given(model)'
 				});
 				expect(yield* failure(Story.make('late', chat, send(asked)))).toMatchObject({
 					step: 1,
-					message: 'a story starts with given(model)'
+					problem: 'a story starts with given(model)'
 				});
 			})
 		);
@@ -131,7 +136,7 @@ describe('Story', () => {
 			Effect.gen(function* () {
 				expect(
 					yield* failure(Story.make('twice', chat, given(ready(1)), given(ready(2))))
-				).toMatchObject({ step: 2, message: 'given(model) comes once, first' });
+				).toMatchObject({ step: 2, problem: 'given(model) comes once, first' });
 			})
 		);
 
@@ -142,23 +147,19 @@ describe('Story', () => {
 					'six',
 					chat,
 					given(ready(1)),
-					anyOrder(...Array.from({ length: 6 }, () => send<Chat, Message, Command>(asked)))
+					anyOrder(...Array.from({ length: 6 }, () => send(asked)))
 				);
 				expect(yield* failure(one)).toMatchObject({
 					step: 2,
-					message: 'anyOrder takes 2 to 5 steps'
+					problem: 'anyOrder takes 2 to 5 steps'
 				});
 				expect(yield* failure(six)).toMatchObject({ step: 2 });
 				const five = Story.make(
 					'five',
 					Lamp.lamp,
-					given(Lamp.off),
-					anyOrder(
-						...Array.from({ length: 5 }, () =>
-							send<Lamp.Lamp, Lamp.Message, Lamp.Command>(Lamp.switched())
-						)
-					),
-					model({ on: true, at: new Date('2026-11-04T00:00:00.000Z'), count: 5 })
+					lamp.given(Lamp.off),
+					lamp.anyOrder(...Array.from({ length: 5 }, () => lamp.send(Lamp.switched()))),
+					lamp.model({ on: true, at: new Date('2026-11-04T00:00:00.000Z'), count: 5 })
 				);
 				yield* Story.run(five);
 			})
@@ -167,17 +168,17 @@ describe('Story', () => {
 		it.effect('an invalid given model or message, checked on the Type side', () =>
 			Effect.gen(function* () {
 				const invalid = { ...Lamp.off, count: 0.5 };
-				expect(yield* failure(Story.make('bad', Lamp.lamp, given(invalid)))).toMatchObject({
+				expect(yield* failure(Story.make('bad', Lamp.lamp, lamp.given(invalid)))).toMatchObject({
 					step: 1,
 					line: 'given {"at":"2026-11-03T00:00:00.000Z","count":0.5,"on":0}',
-					message: 'the model is invalid: Expected an integer\n  at ["count"]'
+					problem: 'the model is invalid: Expected an integer\n  at ["count"]'
 				});
 				const message = Lamp.Switched.make({ at: Lamp.off.at, by: 0.5 }, { disableChecks: true });
 				expect(
-					yield* failure(Story.make('bad', Lamp.lamp, given(Lamp.off), send(message)))
+					yield* failure(Story.make('bad', Lamp.lamp, lamp.given(Lamp.off), lamp.send(message)))
 				).toMatchObject({
 					step: 2,
-					message: 'the message is invalid: Expected an integer\n  at ["by"]'
+					problem: 'the message is invalid: Expected an integer\n  at ["by"]'
 				});
 			})
 		);
@@ -191,10 +192,26 @@ describe('Story', () => {
 					title: 'differs',
 					step: 2,
 					line: 'model Ready {"left":1,"turns":[]}',
-					message: 'the model differs',
+					problem: 'the model differs',
 					expected: 'Ready {"left":1,"turns":[]}',
 					actual: 'Ready {"left":2,"turns":[]}'
 				});
+				// The runner diffs the two sides, so the message leaves them out.
+				expect(error.message).toBe('the model differs\nstep 2: model Ready {"left":1,"turns":[]}');
+			})
+		);
+
+		it.effect('with a stack that starts where the story was made', () =>
+			Effect.gen(function* () {
+				const error = yield* failure(Story.make('differs', chat, given(ready(2)), model(ready(1))));
+				// The message, then the frame of the Story.make call above.
+				expect(error.stack).toMatch(
+					/^StoryFailure: the model differs\nstep 2: model .*\n {4}at .*test\/Story\.test\.ts:\d+:\d+/
+				);
+				const direct = yield* failure(
+					new Story.Story({ title: 'direct', program: chat, steps: [model(ready(1))] })
+				);
+				expect(direct.stack).toContain('src/testing/Story.ts');
 			})
 		);
 
@@ -209,7 +226,7 @@ describe('Story', () => {
 				expect(yield* failure(story)).toMatchObject({
 					step: 2,
 					line: 'satisfies asking',
-					message: 'the model does not satisfy asking',
+					problem: 'the model does not satisfy asking',
 					actual: 'Ready {"left":2,"turns":[]}'
 				});
 			})
@@ -220,7 +237,7 @@ describe('Story', () => {
 				const missing = Story.make('missing', chat, given(ready(2)), send(asked), commands());
 				expect(yield* failure(missing)).toMatchObject({
 					step: 3,
-					message: 'the pending commands differ',
+					problem: 'the pending commands differ',
 					expected: '',
 					actual: 'Ask {"text":"Why Effect?","turn":"t1"}'
 				});
@@ -251,7 +268,7 @@ describe('Story', () => {
 				);
 				expect(yield* failure(resolved)).toMatchObject({
 					step: 4,
-					message:
+					problem:
 						'SaveTurn {"answer":"Typed errors.","id":"t1","question":"Why Effect?"} is not pending',
 					expected: 'SaveTurn {"answer":"Typed errors.","id":"t1","question":"Why Effect?"}',
 					actual: 'Ask {"text":"Why Effect?","turn":"t1"}'
@@ -279,10 +296,19 @@ describe('Story', () => {
 				expect(yield* failure(story)).toMatchObject({
 					step: 5,
 					line: 'end',
-					message: 'the story ended with 2 unasserted command(s)',
+					problem: 'the story ended with 2 unasserted command(s)',
 					actual:
 						'Ask {"text":"And Schema?","turn":"t2"}\nSaveTurn {"answer":"","id":"t1","question":"Why Effect?"}'
 				});
+				// With nothing to diff against, the message shows what is left.
+				expect((yield* failure(story)).message).toBe(
+					[
+						'the story ended with 2 unasserted command(s)',
+						'step 5: end',
+						'actual: Ask {"text":"And Schema?","turn":"t2"}',
+						'  SaveTurn {"answer":"","id":"t1","question":"Why Effect?"}'
+					].join('\n')
+				);
 			})
 		);
 
@@ -301,7 +327,7 @@ describe('Story', () => {
 				);
 				expect(yield* failure(story)).toMatchObject({
 					line: 'end',
-					message: 'the story ended with 1 unasserted command(s)',
+					problem: 'the story ended with 1 unasserted command(s)',
 					actual: 'SaveTurn {"answer":"","id":"t1","question":"Why Effect?"}'
 				});
 			})
@@ -318,7 +344,7 @@ describe('Story', () => {
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 3,
-					message:
+					problem:
 						'Ask {"text":"Why Effect?","turn":"t1"} was cancelled before any step asserted it'
 				});
 			})
@@ -329,7 +355,7 @@ describe('Story', () => {
 				const story = Story.make('restarted', chat, given(ready(2)), send(asked), restart());
 				expect(yield* failure(story)).toMatchObject({
 					step: 3,
-					message: 'the restart drops commands no step asserted',
+					problem: 'the restart drops commands no step asserted',
 					actual: 'Ask {"text":"Why Effect?","turn":"t1"}'
 				});
 			})
@@ -340,10 +366,15 @@ describe('Story', () => {
 				const broken = Lamp.variant(() => {
 					throw new Error('no power');
 				});
-				const story = Story.make('throws', broken, given(Lamp.off), send(Lamp.switched()));
+				const story = Story.make(
+					'throws',
+					broken,
+					lamp.given(Lamp.off),
+					lamp.send(Lamp.switched())
+				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 2,
-					message: 'update threw: Error: no power'
+					problem: 'update threw: Error: no power'
 				});
 			})
 		);
@@ -352,16 +383,21 @@ describe('Story', () => {
 			'an update that mutates its input, even inside a Date, leaving the story intact',
 			() =>
 				Effect.gen(function* () {
-					const mutating = Lamp.variant((lamp, message) => {
-						lamp.at.setUTCDate(lamp.at.getUTCDate() + 1);
+					const mutating = Lamp.variant((current, message) => {
+						current.at.setUTCDate(current.at.getUTCDate() + 1);
 						message.at.setUTCDate(message.at.getUTCDate() + 1);
-						return { model: lamp };
+						return { model: current };
 					});
-					const story = Story.make('mutates', mutating, given(Lamp.off), send(Lamp.switched()));
+					const story = Story.make(
+						'mutates',
+						mutating,
+						lamp.given(Lamp.off),
+						lamp.send(Lamp.switched())
+					);
 					const before = Story.lines(story);
 					expect(yield* failure(story)).toMatchObject({
 						step: 2,
-						message: 'update changed its input'
+						problem: 'update changed its input'
 					});
 					expect(Story.lines(story)).toEqual(before);
 				})
@@ -370,23 +406,23 @@ describe('Story', () => {
 		it.effect('an update that mutates a model it shares with the story', () =>
 			Effect.gen(function* () {
 				const shared = { ...Lamp.off, on: true };
-				const sharing = Lamp.variant((lamp, message) => {
+				const sharing = Lamp.variant((current, message) => {
 					if (message.by === 1) return { model: shared };
-					Object.assign(lamp, { count: 5 });
-					return { model: lamp };
+					Object.assign(current, { count: 5 });
+					return { model: current };
 				});
 				const story = Story.make(
 					'shares',
 					sharing,
-					given(Lamp.off),
-					send(Lamp.switched(1)),
-					send(Lamp.switched(2)),
-					model(shared)
+					lamp.given(Lamp.off),
+					lamp.send(Lamp.switched(1)),
+					lamp.send(Lamp.switched(2)),
+					lamp.model(shared)
 				);
 				const before = Story.lines(story);
 				expect(yield* failure(story)).toMatchObject({
 					step: 3,
-					message: 'update changed its input'
+					problem: 'update changed its input'
 				});
 				expect(Story.lines(story)).toEqual(before);
 				expect(shared).toEqual({ ...Lamp.off, on: true });
@@ -396,36 +432,45 @@ describe('Story', () => {
 		it.effect('an update that gives another result for the same input', () =>
 			Effect.gen(function* () {
 				let calls = 0;
-				const drifting = Lamp.variant((lamp) => {
+				const drifting = Lamp.variant((current) => {
 					calls += 1;
-					return { model: { ...lamp, count: calls } };
+					return { model: { ...current, count: calls } };
 				});
-				const story = Story.make('drifts', drifting, given(Lamp.off), send(Lamp.switched()));
+				const story = Story.make(
+					'drifts',
+					drifting,
+					lamp.given(Lamp.off),
+					lamp.send(Lamp.switched())
+				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 2,
-					message: 'update gave two results for the same input'
+					problem: 'update gave two results for the same input'
 				});
 			})
 		);
 
 		it.effect('an update that returns an invalid model or command', () =>
 			Effect.gen(function* () {
-				const halves = Lamp.variant((lamp) => ({ model: { ...lamp, count: 0.5 } }));
+				const halves = Lamp.variant((current) => ({ model: { ...current, count: 0.5 } }));
 				expect(
-					yield* failure(Story.make('model', halves, given(Lamp.off), send(Lamp.switched())))
+					yield* failure(
+						Story.make('model', halves, lamp.given(Lamp.off), lamp.send(Lamp.switched()))
+					)
 				).toMatchObject({
 					step: 2,
-					message: 'the model is invalid: Expected an integer\n  at ["count"]'
+					problem: 'the model is invalid: Expected an integer\n  at ["count"]'
 				});
-				const blank = Lamp.variant((lamp) => ({
-					model: lamp,
+				const blank = Lamp.variant((current) => ({
+					model: current,
 					commands: [Lamp.Log.make({ text: '' }, { disableChecks: true })]
 				}));
 				expect(
-					yield* failure(Story.make('command', blank, given(Lamp.off), send(Lamp.switched())))
+					yield* failure(
+						Story.make('command', blank, lamp.given(Lamp.off), lamp.send(Lamp.switched()))
+					)
 				).toMatchObject({
 					step: 2,
-					message:
+					problem:
 						'the command is invalid: Expected a value with a length of at least 1\n  at ["text"]'
 				});
 			})
@@ -439,19 +484,20 @@ describe('Story', () => {
 					Command: Lamp.Command,
 					update: (current) => ({ model: current })
 				});
-				expect(yield* failure(Story.make('json', opaque, given({ value: 1n })))).toMatchObject({
+				const { given: start, send: switches } = Story.of(opaque);
+				expect(yield* failure(Story.make('json', opaque, start({ value: 1n })))).toMatchObject({
 					step: 1,
 					line: 'given (not JSON: Expected JSON value at ["value"])',
-					message: 'the model does not survive JSON: Expected JSON value\n  at ["value"]'
+					problem: 'the model does not survive JSON: Expected JSON value\n  at ["value"]'
 				});
 				const producing = Program.make({ ...opaque, update: () => ({ model: { value: 1n } }) });
 				const produced = yield* failure(
-					Story.make('produced', producing, given({ value: 0 }), send(Lamp.switched()))
+					Story.make('produced', producing, start({ value: 0 }), switches(Lamp.switched()))
 				);
 				expect(produced).toBeInstanceOf(Story.StoryFailure);
 				expect(produced).toMatchObject({
 					step: 2,
-					message: 'the model is not JSON: Expected JSON value\n  at ["value"]'
+					problem: 'the model is not JSON: Expected JSON value\n  at ["value"]'
 				});
 				const explored = yield* Effect.flip(
 					Exploration.check(
@@ -462,7 +508,7 @@ describe('Story', () => {
 					)
 				);
 				expect(explored).toMatchObject({
-					message: produced.message,
+					problem: produced.problem,
 					counterexample: [
 						'given {"value":0}',
 						'send Switched {"at":"2026-11-04T00:00:00.000Z","by":1}'
@@ -480,9 +526,11 @@ describe('Story', () => {
 					Command: Lamp.Command,
 					update: (current) => ({ model: current })
 				});
-				expect(yield* failure(Story.make('lossy', trimmed, given(' padded ')))).toMatchObject({
+				expect(
+					yield* failure(Story.make('lossy', trimmed, Story.of(trimmed).given(' padded ')))
+				).toMatchObject({
 					step: 1,
-					message: 'the model changes through JSON',
+					problem: 'the model changes through JSON',
 					expected: '" padded "',
 					actual: '"padded"'
 				});
@@ -492,14 +540,16 @@ describe('Story', () => {
 		it.effect('a broken invariant, before and after a step', () =>
 			Effect.gen(function* () {
 				const big = { ...Lamp.off, count: 10 };
-				expect(yield* failure(Story.make('given', Lamp.lamp, given(big)))).toMatchObject({
+				expect(yield* failure(Story.make('given', Lamp.lamp, lamp.given(big)))).toMatchObject({
 					step: 1,
-					message: 'invariant countIsSmall does not hold',
+					problem: 'invariant countIsSmall does not hold',
 					actual: '{"at":"2026-11-03T00:00:00.000Z","count":10,"on":0}'
 				});
 				expect(
-					yield* failure(Story.make('sent', Lamp.lamp, given(Lamp.off), send(Lamp.switched(10))))
-				).toMatchObject({ step: 2, message: 'invariant countIsSmall does not hold' });
+					yield* failure(
+						Story.make('sent', Lamp.lamp, lamp.given(Lamp.off), lamp.send(Lamp.switched(10)))
+					)
+				).toMatchObject({ step: 2, problem: 'invariant countIsSmall does not hold' });
 				const explosive = Program.make({
 					Model: Lamp.Lamp,
 					Message: Lamp.Message,
@@ -511,10 +561,12 @@ describe('Story', () => {
 						}
 					}
 				});
-				expect(yield* failure(Story.make('throws', explosive, given(Lamp.off)))).toMatchObject({
-					step: 1,
-					message: 'invariant explodes threw: Error: boom'
-				});
+				expect(yield* failure(Story.make('throws', explosive, lamp.given(Lamp.off)))).toMatchObject(
+					{
+						step: 1,
+						problem: 'invariant explodes threw: Error: boom'
+					}
+				);
 			})
 		);
 	});
@@ -532,12 +584,12 @@ describe('Story', () => {
 				const story = Story.make(
 					'logs',
 					logging,
-					given(Lamp.off),
-					send(Lamp.switched()),
-					send(Lamp.switched()),
-					commands(by, logged),
-					resolve(logged),
-					commands(by)
+					lamp.given(Lamp.off),
+					lamp.send(Lamp.switched()),
+					lamp.send(Lamp.switched()),
+					lamp.commands(by, logged),
+					lamp.resolve(logged),
+					lamp.commands(by)
 				);
 				yield* Story.run(story);
 			})
@@ -546,7 +598,9 @@ describe('Story', () => {
 		it.effect('may cancel one that is not pending', () =>
 			Effect.gen(function* () {
 				const cancelling = Lamp.variant((current) => ({ model: current, cancels: [logged] }));
-				yield* Story.run(Story.make('cancels', cancelling, given(Lamp.off), send(Lamp.switched())));
+				yield* Story.run(
+					Story.make('cancels', cancelling, lamp.given(Lamp.off), lamp.send(Lamp.switched()))
+				);
 			})
 		);
 	});
@@ -563,9 +617,9 @@ describe('Story', () => {
 			const story = Story.make(
 				'switches',
 				Lamp.lamp,
-				given(Lamp.off),
-				send(Lamp.switched()),
-				model({ on: true, at: new Date('2026-11-04T00:00:00.000Z'), count: 1 })
+				lamp.given(Lamp.off),
+				lamp.send(Lamp.switched()),
+				lamp.model({ on: true, at: new Date('2026-11-04T00:00:00.000Z'), count: 1 })
 			);
 			expect((yield* Story.run(story)).cases).toEqual(['Message.Switched']);
 		})
@@ -578,21 +632,21 @@ describe('Story', () => {
 					throw new Error('no disk');
 				});
 				expect(
-					yield* failure(Story.make('throws', throwing, given(Lamp.off), restart()))
+					yield* failure(Story.make('throws', throwing, lamp.given(Lamp.off), lamp.restart()))
 				).toMatchObject({
 					step: 2,
 					line: 'restart',
-					message: 'resume threw: Error: no disk'
+					problem: 'resume threw: Error: no disk'
 				});
 				const mutating = resuming((current) => {
 					current.at.setUTCDate(current.at.getUTCDate() + 1);
 					return { model: current };
 				});
 				expect(
-					yield* failure(Story.make('mutates', mutating, given(Lamp.off), restart()))
+					yield* failure(Story.make('mutates', mutating, lamp.given(Lamp.off), lamp.restart()))
 				).toMatchObject({
 					step: 2,
-					message: 'resume changed its input'
+					problem: 'resume changed its input'
 				});
 			})
 		);
@@ -604,15 +658,21 @@ describe('Story', () => {
 				const story = Story.make(
 					'a restart redoes the running step',
 					Conversation.conversation,
-					given(Conversation.idle),
-					send(Started.make({ turn: 't1' })),
-					commands(step(0)),
-					resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'a', last: false })),
-					commands(step(1)),
-					restart(),
-					commands(step(1)),
-					resolve(step(1), StepDone.make({ turn: 't1', step: 1, output: 'b', last: true })),
-					model(Conversation.Phase.cases.Done.make({ turn: 't1', output: 'ab' }))
+					conversation.given(Conversation.idle),
+					conversation.send(Started.make({ turn: 't1' })),
+					conversation.commands(step(0)),
+					conversation.resolve(
+						step(0),
+						StepDone.make({ turn: 't1', step: 0, output: 'a', last: false })
+					),
+					conversation.commands(step(1)),
+					conversation.restart(),
+					conversation.commands(step(1)),
+					conversation.resolve(
+						step(1),
+						StepDone.make({ turn: 't1', step: 1, output: 'b', last: true })
+					),
+					conversation.model(Conversation.Phase.cases.Done.make({ turn: 't1', output: 'ab' }))
 				);
 				expect((yield* Story.run(story)).model).toEqual(
 					Conversation.Phase.cases.Done.make({ turn: 't1', output: 'ab' })
@@ -625,23 +685,29 @@ describe('Story', () => {
 				const story = Story.make(
 					'dropped',
 					Conversation.conversation,
-					given(Conversation.idle),
-					send(Started.make({ turn: 't1' })),
-					commands(step(0)),
-					restart(),
-					resolve(step(0)),
-					resolve(step(0))
+					conversation.given(Conversation.idle),
+					conversation.send(Started.make({ turn: 't1' })),
+					conversation.commands(step(0)),
+					conversation.restart(),
+					conversation.resolve(step(0)),
+					conversation.resolve(step(0))
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
-					message: 'RunStep {"step":0,"turn":"t1"} is not pending'
+					problem: 'RunStep {"step":0,"turn":"t1"} is not pending'
 				});
 			})
 		);
 
 		it.effect('uses the default resume, which keeps the model and starts nothing', () =>
 			Effect.gen(function* () {
-				const story = Story.make('lamp', Lamp.lamp, given(Lamp.off), restart(), model(Lamp.off));
+				const story = Story.make(
+					'lamp',
+					Lamp.lamp,
+					lamp.given(Lamp.off),
+					lamp.restart(),
+					lamp.model(Lamp.off)
+				);
 				expect((yield* Story.run(story)).model).toEqual(Lamp.off);
 			})
 		);
@@ -649,9 +715,9 @@ describe('Story', () => {
 
 	describe('anyOrder', () => {
 		const { Started, StepDone, Recall } = Conversation.Message.cases;
-		const started = steps<Conversation.Phase, Conversation.Message, Conversation.Command>(
-			send(Started.make({ turn: 't1' })),
-			commands(step(0))
+		const started = conversation.steps(
+			conversation.send(Started.make({ turn: 't1' })),
+			conversation.commands(step(0))
 		);
 
 		it.effect('permutes a group as one unit and names the order that failed', () =>
@@ -659,9 +725,9 @@ describe('Story', () => {
 				const story = Story.make(
 					'a recall before the start does not stop it',
 					Conversation.conversation,
-					given(Conversation.idle),
-					anyOrder(started, send(Recall.make({ turn: 't1' }))),
-					model(Conversation.Phase.cases.Recalled.make({ turn: 't1' }))
+					conversation.given(Conversation.idle),
+					conversation.anyOrder(started, conversation.send(Recall.make({ turn: 't1' }))),
+					conversation.model(Conversation.Phase.cases.Recalled.make({ turn: 't1' }))
 				);
 				expect(Story.lines(story)).toEqual([
 					'given Idle',
@@ -673,7 +739,7 @@ describe('Story', () => {
 				]);
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
-					message: 'in order 5, 3, 4: the model differs',
+					problem: 'in order 5, 3, 4: the model differs',
 					actual: 'Working {"output":"","step":0,"turn":"t1"}'
 				});
 			})
@@ -700,14 +766,17 @@ describe('Story', () => {
 				const story = Story.make(
 					'a recall wins over the last step in either order',
 					Conversation.conversation,
-					given(Conversation.idle),
+					conversation.given(Conversation.idle),
 					started,
-					anyOrder(
-						send(Recall.make({ turn: 't1' })),
-						resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'a', last: true }))
+					conversation.anyOrder(
+						conversation.send(Recall.make({ turn: 't1' })),
+						conversation.resolve(
+							step(0),
+							StepDone.make({ turn: 't1', step: 0, output: 'a', last: true })
+						)
 					),
-					model(Conversation.Phase.cases.Recalled.make({ turn: 't1' })),
-					commands()
+					conversation.model(Conversation.Phase.cases.Recalled.make({ turn: 't1' })),
+					conversation.commands()
 				);
 				const outcome = yield* Story.run(story);
 				expect(outcome.cases).toContain('Model.Done');
@@ -719,17 +788,20 @@ describe('Story', () => {
 				const story = Story.make(
 					'a recall also stops the next step',
 					Conversation.conversation,
-					given(Conversation.idle),
+					conversation.given(Conversation.idle),
 					started,
-					anyOrder(
-						resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'a', last: false })),
-						send(Recall.make({ turn: 't1' }))
+					conversation.anyOrder(
+						conversation.resolve(
+							step(0),
+							StepDone.make({ turn: 't1', step: 0, output: 'a', last: false })
+						),
+						conversation.send(Recall.make({ turn: 't1' }))
 					),
-					commands()
+					conversation.commands()
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
-					message:
+					problem:
 						'in order 5, 6: RunStep {"step":1,"turn":"t1"} was cancelled before any step asserted it'
 				});
 			})
@@ -740,17 +812,19 @@ describe('Story', () => {
 				const story = Story.make(
 					'a recall after the group stops an unasserted step',
 					Conversation.conversation,
-					given(Conversation.idle),
-					send(Started.make({ turn: 't1' })),
-					anyOrder(
-						satisfies('working', Conversation.Phase.guards.Working),
-						model(Conversation.Phase.cases.Working.make({ turn: 't1', step: 0, output: '' }))
+					conversation.given(Conversation.idle),
+					conversation.send(Started.make({ turn: 't1' })),
+					conversation.anyOrder(
+						conversation.satisfies('working', Conversation.Phase.guards.Working),
+						conversation.model(
+							Conversation.Phase.cases.Working.make({ turn: 't1', step: 0, output: '' })
+						)
 					),
-					send(Recall.make({ turn: 't1' }))
+					conversation.send(Recall.make({ turn: 't1' }))
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
-					message:
+					problem:
 						'in order 4, 5: RunStep {"step":0,"turn":"t1"} was cancelled before any step asserted it'
 				});
 			})
@@ -761,16 +835,22 @@ describe('Story', () => {
 				const story = Story.make(
 					'answered twice',
 					Conversation.conversation,
-					given(Conversation.idle),
+					conversation.given(Conversation.idle),
 					started,
-					anyOrder(
-						resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'a', last: true })),
-						resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'b', last: true }))
+					conversation.anyOrder(
+						conversation.resolve(
+							step(0),
+							StepDone.make({ turn: 't1', step: 0, output: 'a', last: true })
+						),
+						conversation.resolve(
+							step(0),
+							StepDone.make({ turn: 't1', step: 0, output: 'b', last: true })
+						)
 					)
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
-					message: 'in order 5, 6: RunStep {"step":0,"turn":"t1"} is not pending'
+					problem: 'in order 5, 6: RunStep {"step":0,"turn":"t1"} is not pending'
 				});
 			})
 		);
@@ -780,17 +860,20 @@ describe('Story', () => {
 				const story = Story.make(
 					'order matters',
 					Conversation.conversation,
-					given(Conversation.idle),
+					conversation.given(Conversation.idle),
 					started,
-					anyOrder(
-						send(Recall.make({ turn: 't1' })),
-						resolve(step(0), StepDone.make({ turn: 't1', step: 0, output: 'a', last: true }))
+					conversation.anyOrder(
+						conversation.send(Recall.make({ turn: 't1' })),
+						conversation.resolve(
+							step(0),
+							StepDone.make({ turn: 't1', step: 0, output: 'a', last: true })
+						)
 					),
-					satisfies('done', Conversation.Phase.guards.Done)
+					conversation.satisfies('done', Conversation.Phase.guards.Done)
 				);
 				expect(yield* failure(story)).toMatchObject({
 					step: 7,
-					message: 'in order 5, 6: the model does not satisfy done'
+					problem: 'in order 5, 6: the model does not satisfy done'
 				});
 			})
 		);

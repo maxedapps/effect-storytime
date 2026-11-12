@@ -23,7 +23,7 @@ import {
 	variant
 } from './examples/membership.ts';
 
-const { given, when, accepted, rejected, state, satisfies } = Decision;
+const { given, when, accepted, rejected, state, satisfies } = Decision.of(membership);
 
 const grant = Grant.make({ source: 'teachable', at });
 const granted = Granted.make({ source: 'teachable', at });
@@ -144,7 +144,7 @@ describe('Decision', () => {
 			expect(yield* Effect.flip(Decision.against(revokes, Memberships, 'u2'))).toMatchObject({
 				step: 1,
 				line: 'given {"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}',
-				message: 'the stored state differs from given',
+				problem: 'the stored state differs from given',
 				expected: '{"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}',
 				actual: '{"active":0,"checkedAt":null,"source":"teachable"}'
 			});
@@ -166,7 +166,7 @@ describe('Decision', () => {
 			const wrong = Decision.make('wrong', membership, given(none), when(grant), state(none));
 			expect(yield* Effect.flip(Decision.against(wrong, Memberships, 'u1'))).toMatchObject({
 				step: 3,
-				message: 'a when needs accepted(...) or rejected(...) right after it'
+				problem: 'a when needs accepted(...) or rejected(...) right after it'
 			});
 			const stale = Decision.make(
 				'stale',
@@ -178,7 +178,7 @@ describe('Decision', () => {
 			);
 			expect(yield* Effect.flip(Decision.against(stale, Memberships, 'u2'))).toMatchObject({
 				step: 4,
-				message: 'the state differs',
+				problem: 'the state differs',
 				expected: '{"active":0,"checkedAt":null,"source":"teachable"}',
 				actual: '{"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}'
 			});
@@ -192,7 +192,7 @@ describe('Decision', () => {
 			const broken = Decision.make('given', membership, given(unchecked));
 			expect(yield* Effect.flip(Decision.against(broken, Memberships, 'u1'))).toMatchObject({
 				step: 1,
-				message: 'invariant checkedWhenActive does not hold'
+				problem: 'invariant checkedWhenActive does not hold'
 			});
 			const activating = Decider.make({
 				...membership,
@@ -207,7 +207,7 @@ describe('Decision', () => {
 			);
 			expect(yield* Effect.flip(Decision.against(evolving, Memberships, 'u2'))).toMatchObject({
 				step: 2,
-				message: 'invariant checkedWhenActive does not hold'
+				problem: 'invariant checkedWhenActive does not hold'
 			});
 			const throwing = variant(() => {
 				throw new Error('no rule');
@@ -215,7 +215,7 @@ describe('Decision', () => {
 			const throws = Decision.make('throws', throwing, given(none), when(grant));
 			expect(yield* Effect.flip(Decision.against(throws, Memberships, 'u3'))).toMatchObject({
 				step: 2,
-				message: 'decide threw: Error: no rule'
+				problem: 'decide threw: Error: no rule'
 			});
 			const invalid = Decider.make({
 				...membership,
@@ -224,7 +224,7 @@ describe('Decision', () => {
 			const drops = Decision.make('invalid', invalid, given(none), when(grant), accepted(granted));
 			expect(yield* Effect.flip(Decision.against(drops, Memberships, 'u4'))).toMatchObject({
 				step: 2,
-				message:
+				problem:
 					'the state is invalid: Expected a value with a length of at least 1\n  at ["checkedAt"]'
 			});
 		}).pipe(Effect.provide(Memberships.layer))
@@ -239,14 +239,14 @@ describe('Decision', () => {
 					title: 'empty',
 					step: 1,
 					line: '',
-					message: 'a decision starts with given(state)'
+					problem: 'a decision starts with given(state)'
 				});
 				expect(
 					yield* failure(Decision.make('late', membership, when(revoke), given(none)))
 				).toMatchObject({ step: 1, line: 'when Revoke' });
 				expect(
 					yield* failure(Decision.make('twice', membership, given(none), given(none)))
-				).toMatchObject({ step: 2, message: 'given(state) comes once, first' });
+				).toMatchObject({ step: 2, problem: 'given(state) comes once, first' });
 			})
 		);
 
@@ -255,10 +255,10 @@ describe('Decision', () => {
 				const unanswered = 'a when needs accepted(...) or rejected(...) right after it';
 				expect(
 					yield* failure(Decision.make('next', membership, given(none), when(revoke), when(revoke)))
-				).toMatchObject({ step: 3, line: 'when Revoke', message: unanswered });
+				).toMatchObject({ step: 3, line: 'when Revoke', problem: unanswered });
 				expect(
 					yield* failure(Decision.make('end', membership, given(none), when(revoke)))
-				).toMatchObject({ step: 3, line: 'end', message: unanswered });
+				).toMatchObject({ step: 3, line: 'end', problem: unanswered });
 			})
 		);
 
@@ -266,7 +266,7 @@ describe('Decision', () => {
 			Effect.gen(function* () {
 				expect(
 					yield* failure(Decision.make('accepted', membership, given(none), accepted()))
-				).toMatchObject({ step: 2, message: 'accepted(...) comes right after a when' });
+				).toMatchObject({ step: 2, problem: 'accepted(...) comes right after a when' });
 				expect(
 					yield* failure(
 						Decision.make(
@@ -278,7 +278,7 @@ describe('Decision', () => {
 							rejected(NotActive.make({}))
 						)
 					)
-				).toMatchObject({ step: 4, message: 'rejected(...) comes right after a when' });
+				).toMatchObject({ step: 4, problem: 'rejected(...) comes right after a when' });
 			})
 		);
 
@@ -294,14 +294,14 @@ describe('Decision', () => {
 				expect(yield* failure(more)).toMatchObject({
 					step: 3,
 					line: 'accepted Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}, Revoked',
-					message: 'the events differ',
+					problem: 'the events differ',
 					expected: 'Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}\nRevoked',
 					actual: 'Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}'
 				});
 				const refused = Decision.make('refused', membership, given(none), when(revoke), accepted());
 				expect(yield* failure(refused)).toMatchObject({
 					step: 3,
-					message: 'the command was rejected',
+					problem: 'the command was rejected',
 					expected: '',
 					actual: 'NotActive'
 				});
@@ -319,7 +319,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(other)).toMatchObject({
 					step: 3,
-					message: 'the rejection differs',
+					problem: 'the rejection differs',
 					expected: 'AlreadyActive {"since":null}',
 					actual: 'NotActive'
 				});
@@ -332,7 +332,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(taken)).toMatchObject({
 					step: 3,
-					message: 'the command was accepted',
+					problem: 'the command was accepted',
 					expected: 'NotActive',
 					actual: 'Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}'
 				});
@@ -345,7 +345,7 @@ describe('Decision', () => {
 					yield* failure(Decision.make('state', membership, given(none), state(active)))
 				).toMatchObject({
 					step: 2,
-					message: 'the state differs',
+					problem: 'the state differs',
 					expected: '{"active":1,"checkedAt":"2026-11-03T00:00:00.000Z","source":"teachable"}',
 					actual: '{"active":0,"checkedAt":null,"source":"teachable"}'
 				});
@@ -357,7 +357,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(check)).toMatchObject({
 					step: 2,
-					message: 'the state does not satisfy active',
+					problem: 'the state does not satisfy active',
 					actual: '{"active":0,"checkedAt":null,"source":"teachable"}'
 				});
 				const explodes = Decision.make(
@@ -370,7 +370,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(explodes)).toMatchObject({
 					step: 2,
-					message: 'explodes threw: Error: boom'
+					problem: 'explodes threw: Error: boom'
 				});
 			})
 		);
@@ -380,7 +380,7 @@ describe('Decision', () => {
 				const empty = 'Expected a value with a length of at least 1\n  at ';
 				expect(
 					yield* failure(Decision.make('given', membership, given({ ...none, checkedAt: '' })))
-				).toMatchObject({ step: 1, message: `the state is invalid: ${empty}["checkedAt"]` });
+				).toMatchObject({ step: 1, problem: `the state is invalid: ${empty}["checkedAt"]` });
 				const command = Decision.make(
 					'command',
 					membership,
@@ -389,7 +389,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(command)).toMatchObject({
 					step: 2,
-					message: `the command is invalid: ${empty}["at"]`
+					problem: `the command is invalid: ${empty}["at"]`
 				});
 				const event = Decision.make(
 					'event',
@@ -400,7 +400,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(event)).toMatchObject({
 					step: 3,
-					message: `the event is invalid: ${empty}["at"]`
+					problem: `the event is invalid: ${empty}["at"]`
 				});
 				const expected = Decision.make(
 					'expected',
@@ -410,7 +410,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(expected)).toMatchObject({
 					step: 2,
-					message: `the state is invalid: ${empty}["checkedAt"]`
+					problem: `the state is invalid: ${empty}["checkedAt"]`
 				});
 				const rejection = Decision.make(
 					'rejection',
@@ -421,7 +421,7 @@ describe('Decision', () => {
 				);
 				expect(yield* failure(rejection)).toMatchObject({
 					step: 3,
-					message: `the rejection is invalid: ${empty}["since"]`
+					problem: `the rejection is invalid: ${empty}["since"]`
 				});
 			})
 		);
@@ -437,10 +437,12 @@ describe('Decision', () => {
 					invariants: {}
 				});
 				expect(
-					yield* Effect.flip(Decision.run(Decision.make('json', opaque, given({ value: 1n }))))
+					yield* Effect.flip(
+						Decision.run(Decision.make('json', opaque, Decision.of(opaque).given({ value: 1n })))
+					)
 				).toMatchObject({
 					step: 1,
-					message: 'the state does not survive JSON: Expected JSON value\n  at ["value"]'
+					problem: 'the state does not survive JSON: Expected JSON value\n  at ["value"]'
 				});
 			})
 		);
@@ -451,7 +453,7 @@ describe('Decision', () => {
 					yield* failure(Decision.make('given', membership, given({ ...none, active: true })))
 				).toMatchObject({
 					step: 1,
-					message: 'invariant checkedWhenActive does not hold',
+					problem: 'invariant checkedWhenActive does not hold',
 					actual: '{"active":1,"checkedAt":null,"source":"teachable"}'
 				});
 				const unchecked = Decider.make({
@@ -462,7 +464,7 @@ describe('Decision', () => {
 					yield* failure(
 						Decision.make('evolved', unchecked, given(none), when(grant), accepted(granted))
 					)
-				).toMatchObject({ step: 2, message: 'invariant checkedWhenActive does not hold' });
+				).toMatchObject({ step: 2, problem: 'invariant checkedWhenActive does not hold' });
 				const lax = Decider.make({
 					State: membership.State,
 					Command: membership.Command,
@@ -483,14 +485,14 @@ describe('Decision', () => {
 				});
 				expect(
 					yield* failure(Decision.make('throws', throwing, given(none), when(grant)))
-				).toMatchObject({ step: 2, message: 'decide threw: Error: no rule' });
+				).toMatchObject({ step: 2, problem: 'decide threw: Error: no rule' });
 				const mutating = variant((current, command) => {
 					Object.assign(current, { checkedAt: later });
 					return membership.decide(current, command);
 				});
 				expect(
 					yield* failure(Decision.make('mutates', mutating, given(none), when(grant)))
-				).toMatchObject({ step: 2, message: 'decide changed its input' });
+				).toMatchObject({ step: 2, problem: 'decide changed its input' });
 				let calls = 0;
 				const drifting = variant(() => {
 					calls += 1;
@@ -500,7 +502,7 @@ describe('Decision', () => {
 					yield* failure(Decision.make('drifts', drifting, given(none), when(grant)))
 				).toMatchObject({
 					step: 2,
-					message: 'decide gave two results for the same input',
+					problem: 'decide gave two results for the same input',
 					expected: 'accepted []',
 					actual: 'rejected {"_tag":"NotActive"}'
 				});
@@ -509,7 +511,7 @@ describe('Decision', () => {
 					yield* failure(Decision.make('refusing', refusing, given(none), when(grant)))
 				).toMatchObject({
 					step: 2,
-					message:
+					problem:
 						'the rejection is invalid: Expected a value with a length of at least 1\n  at ["since"]'
 				});
 				const invalid = variant(() =>
@@ -519,7 +521,7 @@ describe('Decision', () => {
 					yield* failure(Decision.make('invalid', invalid, given(none), when(grant)))
 				).toMatchObject({
 					step: 2,
-					message: 'the event is invalid: Expected a value with a length of at least 1\n  at ["at"]'
+					problem: 'the event is invalid: Expected a value with a length of at least 1\n  at ["at"]'
 				});
 			})
 		);
@@ -530,16 +532,16 @@ describe('Decision', () => {
 					yield* evolved(() => {
 						throw new Error('no fold');
 					})
-				).toMatchObject({ step: 2, message: 'evolve threw: Error: no fold' });
+				).toMatchObject({ step: 2, problem: 'evolve threw: Error: no fold' });
 				expect(
 					yield* evolved((current, event) => {
 						Object.assign(current, { source: 'manual' });
 						return membership.evolve(current, event);
 					})
-				).toMatchObject({ step: 2, message: 'evolve changed its input' });
+				).toMatchObject({ step: 2, problem: 'evolve changed its input' });
 				expect(yield* evolved((current) => ({ ...current, checkedAt: '' }))).toMatchObject({
 					step: 2,
-					message:
+					problem:
 						'the state is invalid: Expected a value with a length of at least 1\n  at ["checkedAt"]'
 				});
 			})
@@ -560,7 +562,7 @@ describe('Decision', () => {
 				const before = Decision.lines(events);
 				expect(yield* failure(events)).toMatchObject({
 					step: 2,
-					message: 'evolve changed its input'
+					problem: 'evolve changed its input'
 				});
 				expect(Decision.lines(events)).toEqual(before);
 				expect(shared).toEqual(granted);
@@ -585,7 +587,7 @@ describe('Decision', () => {
 				const shown = Decision.lines(states);
 				expect(yield* failure(states)).toMatchObject({
 					step: 5,
-					message: 'decide changed its input'
+					problem: 'decide changed its input'
 				});
 				expect(Decision.lines(states)).toEqual(shown);
 				expect(reached).toEqual(active);

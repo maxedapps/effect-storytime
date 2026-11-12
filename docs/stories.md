@@ -6,25 +6,28 @@ A story tells how a Program behaves as steps. It starts from a model, sends mess
 
 ## Writing a story
 
-`Story.make(title, program, ...steps)` infers the Model, Message and Command types from the Program, so the steps type-check without type arguments. The examples use the chat Program from [program.md](program.md).
+`Story.of(program)` gives the step builders, typed by the Program, so steps need no type arguments. `Story.make(title, program, ...steps)` builds the story. The examples use the chat Program from [program.md](program.md).
 
 <!-- snippet: test/docs/chat.test.ts#answers -->
 ```ts
+// The step builders, typed by the Program.
+const story = Story.of(chat);
+
 const ask = Ask.make({ turn: 't1', text: 'Why Effect?' });
 const turn = { id: 't1', question: 'Why Effect?', answer: 'Typed errors.' };
 
 const answers = Story.make(
 	'a question is answered while it streams',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed errors.' })),
-	Story.resolve(ask, Answered.make({ turn: 't1', left: 1 })),
-	Story.commands(SaveTurn.make(turn)),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.emit(ask, Delta.make({ turn: 't1', text: 'Typed errors.' })),
+	story.resolve(ask, Answered.make({ turn: 't1', left: 1 })),
+	story.commands(SaveTurn.make(turn)),
 	// A command that answers with no message resolves without a reply.
-	Story.resolve(SaveTurn.make(turn)),
-	Story.model(Ready.make({ turns: [turn], left: 1 }))
+	story.resolve(SaveTurn.make(turn)),
+	story.model(Ready.make({ turns: [turn], left: 1 }))
 );
 ```
 
@@ -52,16 +55,16 @@ Every command `update` or `resume` produces is owed an assertion: a `commands`, 
 const stops = Story.make(
 	'a stop and a late delta land in either order',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.anyOrder(
-		Story.send(Stopped.make({})),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.anyOrder(
+		story.send(Stopped.make({})),
 		// Skipped in the order where the stop cancelled `ask` first.
-		Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' }))
+		story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' }))
 	),
-	Story.model(ready(2)),
-	Story.commands()
+	story.model(ready(2)),
+	story.commands()
 );
 ```
 
@@ -74,45 +77,45 @@ const stops = Story.make(
 const resumes = Story.make(
 	'a restart asks again from the start',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' })),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' })),
 	// The model goes through JSON, `ask` is dropped and `resume` asks again with an empty answer.
-	Story.restart(),
-	Story.model(Asking.make({ turns: [], left: 2, turn: 't1', question: 'Why Effect?', answer: '' })),
-	Story.commands(ask)
+	story.restart(),
+	story.model(Asking.make({ turns: [], left: 2, turn: 't1', question: 'Why Effect?', answer: '' })),
+	story.commands(ask)
 );
 ```
 
 ## Shared steps
 
-`Story.steps(...)` groups steps that several stories share. A group defined outside `Story.make` has nothing to infer its types from, so give it the Program's types explicitly. Inside `anyOrder`, a group moves as one step.
+`steps(...)` groups steps that several stories share. Build it once with the Program's builders and use it in any story about that Program. Inside `anyOrder`, a group moves as one step.
 
 <!-- snippet: test/docs/chat.test.ts#shared -->
 ```ts
-// A part several stories share. Outside `Story.make` nothing infers its types, so it names them.
-const asked = Story.steps<Chat, Message, Command>(
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask)
+// A part several stories share, built once.
+const asked = story.steps(
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask)
 );
 
 const limited = Story.make(
 	'a refusal at the limit locks the chat',
 	chat,
-	Story.given(ready(2)),
+	story.given(ready(2)),
 	asked,
-	Story.resolve(ask, Refused.make({ turn: 't1', reason: 'LimitReached' })),
-	Story.satisfies('limited', Chat.guards.Limited)
+	story.resolve(ask, Refused.make({ turn: 't1', reason: 'LimitReached' })),
+	story.satisfies('limited', Chat.guards.Limited)
 );
 
 const signedOut = Story.make(
 	'a refusal for a signed-out user signs the chat out',
 	chat,
-	Story.given(ready(2)),
+	story.given(ready(2)),
 	asked,
-	Story.resolve(ask, Refused.make({ turn: 't1', reason: 'SignedOut' })),
-	Story.model(SignedOut.make({}))
+	story.resolve(ask, Refused.make({ turn: 't1', reason: 'SignedOut' })),
+	story.model(SignedOut.make({}))
 );
 ```
 
@@ -168,14 +171,14 @@ expect(cases).toEqual([
 
 ## Failures
 
-A failing story fails with a `Story.StoryFailure`:
+A failing story fails with a `Story.StoryFailure`. Its `message` is the whole failure, so a test runner shows it: the problem, then `step <n>: <line>`, then `actual: …` when there is nothing to diff it against. Its stack starts at the `Story.make` call, so the runner's code frame shows your story.
 
 | Field | Meaning |
 | --- | --- |
 | `title` | The story's title. |
 | `step` | The 1-based number of the failing line in `Story.lines(story)`. A failure at the end is `lines.length + 1`. |
 | `line` | That line, or `end`. |
-| `message` | What went wrong. Inside an `anyOrder`, it starts with the failing order as the line numbers of its steps, such as `in order 5, 4: `. |
+| `problem` | What went wrong. Inside an `anyOrder`, it starts with the failing order as the line numbers of its steps, such as `in order 5, 4: `. |
 | `expected`, `actual` | The two sides as lines, when they differ. Vitest diffs them. |
 
 <!-- snippet: test/docs/chat.test.ts#failure -->
@@ -183,10 +186,10 @@ A failing story fails with a `Story.StoryFailure`:
 const forgets = Story.make(
 	'an answer is forgotten',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.resolve(ask, Answered.make({ turn: 't1', left: 1 }))
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.resolve(ask, Answered.make({ turn: 't1', left: 1 }))
 	// SaveTurn is never asserted.
 );
 const failure = yield* Effect.flip(Story.run(forgets));
@@ -195,22 +198,22 @@ expect(failure).toMatchObject({
 	title: 'an answer is forgotten',
 	step: 5,
 	line: 'end',
-	message: 'the story ended with 1 unasserted command(s)',
+	problem: 'the story ended with 1 unasserted command(s)',
 	actual: 'SaveTurn {"answer":"","id":"t1","question":"Why Effect?"}'
 });
 ```
 
-[strict-rules.md](strict-rules.md) lists every message.
+[strict-rules.md](strict-rules.md) lists every problem.
 
 ## API
 
 | Export | Kind | Meaning |
 | --- | --- | --- |
+| `of(program)` | `Builders<Model, Message, Command>` | The step builders above (`given`, `send`, `model`, `satisfies`, `commands`, `resolve`, `emit`, `restart`, `anyOrder`, `steps`), each giving a `Story.Step`. |
 | `make(title, program, ...steps)` | function | Builds a `Story`. |
-| `given`, `send`, `model`, `satisfies`, `commands`, `resolve`, `emit`, `restart`, `anyOrder`, `steps` | functions | The steps above, each a `Story.Step`. |
 | `run(story)` | `Effect<Outcome<Model>, StoryFailure>` | Checks a story in memory. |
 | `lines(story)` | `ReadonlyArray<string>` | The story as lines. |
 | `Story<Model, Message, Command>` | class | A story value: `title`, `program`, `steps`. |
 | `Step<Model, Message, Command>`, `Steps` | types | One step, and a list of them. |
 | `Outcome<Model>` | interface | `{ model, final, cases }`. |
-| `StoryFailure` | `Schema.TaggedError` | `{ title, step, line, message, expected?, actual?, counterexample?, replay? }`. The last two are set only by explorations. |
+| `StoryFailure` | `Schema.TaggedError` | `{ title, step, line, problem, expected?, actual?, counterexample?, replay? }`. The last two are set only by explorations. |

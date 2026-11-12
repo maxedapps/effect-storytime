@@ -12,7 +12,7 @@ import { caser, checks, strict } from './internal/decider.ts';
 import type { Decided } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from '../internal/transition.ts';
 import type { Transition } from '../internal/transition.ts';
-import { TypeId } from './internal/tale.ts';
+import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import { StoryFailure } from './Story.ts';
 
@@ -31,36 +31,36 @@ interface StepDefinition extends Data.TaggedEnum.WithGenerics<4> {
 
 const Step = Data.taggedEnum<StepDefinition>();
 
-/** Starts the decision from a state. It comes first and only once. */
-export const given = <State = never, Command = never, Event = never, Rejection = never>(
-	state: NoInfer<State>
-): Step<State, Command, Event, Rejection> => Step.Given({ state });
+/** The steps of decisions about one Decider, typed by it, so steps built anywhere need no type parameters. */
+export interface Builders<State, Command, Event, Rejection> {
+	/** Starts the decision from a state. It comes first and only once. */
+	readonly given: (state: State) => Step<State, Command, Event, Rejection>;
+	/** Decides a command. The next step names its events or its rejection. */
+	readonly when: (command: Command) => Step<State, Command, Event, Rejection>;
+	/** Requires the command to give exactly these events, in this order; `accepted()` means none. */
+	readonly accepted: (...events: ReadonlyArray<Event>) => Step<State, Command, Event, Rejection>;
+	/** Requires the command to be rejected with `rejection`. */
+	readonly rejected: (rejection: Rejection) => Step<State, Command, Event, Rejection>;
+	/** Requires the state to equal `expected`. */
+	readonly state: (expected: State) => Step<State, Command, Event, Rejection>;
+	/** Requires the state to pass a check, shown in lines by its label. */
+	readonly satisfies: (
+		label: string,
+		check: (state: State) => boolean
+	) => Step<State, Command, Event, Rejection>;
+}
 
-/** Decides a command. The next step names its events or its rejection. */
-export const when = <State = never, Command = never, Event = never, Rejection = never>(
-	command: NoInfer<Command>
-): Step<State, Command, Event, Rejection> => Step.When({ command });
-
-/** Requires the command to give exactly these events, in this order; `accepted()` means none. */
-export const accepted = <State = never, Command = never, Event = never, Rejection = never>(
-	...events: ReadonlyArray<NoInfer<Event>>
-): Step<State, Command, Event, Rejection> => Step.Accepted({ events });
-
-/** Requires the command to be rejected with `rejection`. */
-export const rejected = <State = never, Command = never, Event = never, Rejection = never>(
-	rejection: NoInfer<Rejection>
-): Step<State, Command, Event, Rejection> => Step.Rejected({ rejection });
-
-/** Requires the state to equal `expected`. */
-export const state = <State = never, Command = never, Event = never, Rejection = never>(
-	expected: NoInfer<State>
-): Step<State, Command, Event, Rejection> => Step.State({ expected });
-
-/** Requires the state to pass a check, shown in lines by its label. */
-export const satisfies = <State = never, Command = never, Event = never, Rejection = never>(
-	label: string,
-	check: (current: NoInfer<State>) => boolean
-): Step<State, Command, Event, Rejection> => Step.Satisfies({ label, check });
+/** The step builders for decisions about `decider`; only its types matter. */
+export const of = <State, Command, Event, Rejection>(
+	_decider: Decider<State, Command, Event, Rejection>
+): Builders<State, Command, Event, Rejection> => ({
+	given: (state) => Step.Given({ state }),
+	when: (command) => Step.When({ command }),
+	accepted: (...events) => Step.Accepted({ events }),
+	rejected: (rejection) => Step.Rejected({ rejection }),
+	state: (expected) => Step.State({ expected }),
+	satisfies: (label, check) => Step.Satisfies({ label, check })
+});
 
 export class Decision<State, Command, Event, Rejection> extends Data.TaggedClass('Decision')<{
 	readonly title: string;
@@ -76,7 +76,8 @@ export const make = <State, Command, Event, Rejection>(
 	title: string,
 	decider: Decider<State, Command, Event, Rejection>,
 	...body: ReadonlyArray<Step<State, Command, Event, Rejection>>
-): Decision<State, Command, Event, Rejection> => new Decision({ title, decider, steps: body });
+): Decision<State, Command, Event, Rejection> =>
+	made(new Decision({ title, decider, steps: body }), make);
 
 /** What a passing decision reached: its final state, also as a line, and the cases it touched. */
 export interface Outcome<State> {
@@ -137,14 +138,17 @@ const tell = Effect.fnUntraced(function* <State, Command, Event, Rejection, E>(
 	const unanswered = 'a when needs accepted(...) or rejected(...) right after it';
 
 	const fail = (entry: { readonly no: number; readonly line: string }) => (problem: Problem) =>
-		new StoryFailure({
-			title,
-			step: entry.no,
-			line: entry.line,
-			message: problem.message,
-			expected: problem.expected,
-			actual: problem.actual
-		});
+		located(
+			decision,
+			new StoryFailure({
+				title,
+				step: entry.no,
+				line: entry.line,
+				problem: problem.message,
+				expected: problem.expected,
+				actual: problem.actual
+			})
+		);
 
 	const answer = (
 		decided: Option.Option<Decided<Event, Rejection>>,

@@ -6,23 +6,26 @@ import * as Lamp from './examples/lamp.ts';
 import { membership, Memberships, none, NotActive, Revoke } from './examples/membership.ts';
 
 const { Asked, Stopped } = Message.cases;
+const story = Story.of(chat);
+const decision = Decision.of(membership);
+const lamp = Story.of(Lamp.lamp);
 const ask = Command.cases.Ask.make({ turn: 't1', text: 'Why?' });
 
 const stops = Story.make(
 	'a question is stopped',
 	chat,
-	Story.given(ready(1)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why?' })),
-	Story.commands(ask),
-	Story.send(Stopped.make({}))
+	story.given(ready(1)),
+	story.send(Asked.make({ turn: 't1', text: 'Why?' })),
+	story.commands(ask),
+	story.send(Stopped.make({}))
 );
 
 const forgets = Story.make(
 	'a question is forgotten',
 	chat,
-	Story.given(ready(1)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why?' })),
-	Story.commands()
+	story.given(ready(1)),
+	story.send(Asked.make({ turn: 't1', text: 'Why?' })),
+	story.commands()
 );
 
 const switches = Exploration.make('the lamp switches', Lamp.lamp, {
@@ -36,9 +39,9 @@ const switches = Exploration.make('the lamp switches', Lamp.lamp, {
 const revokes = Decision.make(
 	'only an active membership is revoked',
 	membership,
-	Decision.given(none),
-	Decision.when(Revoke.make({})),
-	Decision.rejected(NotActive.make({}))
+	decision.given(none),
+	decision.when(Revoke.make({})),
+	decision.rejected(NotActive.make({}))
 );
 
 const logs = Lamp.variant((current, message) => ({
@@ -52,9 +55,9 @@ describe('stories and covers', () => {
 		Story.make(
 			'the lamp logs a switch',
 			logs,
-			Story.given(Lamp.off),
-			Story.send(Lamp.switched()),
-			Story.resolve(Lamp.Log.make({ text: 'switched' }))
+			lamp.given(Lamp.off),
+			lamp.send(Lamp.switched()),
+			lamp.resolve(Lamp.Log.make({ text: 'switched' }))
 		)
 	]);
 
@@ -108,7 +111,7 @@ describe('tell', () => {
 					failure: {
 						step: 3,
 						line: 'commands none',
-						message: 'the pending commands differ',
+						problem: 'the pending commands differ',
 						expected: '',
 						actual: 'Ask {"text":"Why?","turn":"t1"}',
 						counterexample: undefined,

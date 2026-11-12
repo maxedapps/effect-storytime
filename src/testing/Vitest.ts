@@ -40,10 +40,10 @@ const told = (tale: Tale.Tale, exit: Exit.Exit<Tale.Reached, unknown>): Told => 
 			failure: Option.getOrUndefined(
 				Option.map(
 					Option.filter(Cause.findErrorOption(cause), isStoryFailure),
-					({ step, line, message, expected, actual, counterexample, replay }) => ({
+					({ step, line, problem, expected, actual, counterexample, replay }) => ({
 						step,
 						line,
-						message,
+						problem,
 						expected,
 						actual,
 						counterexample,
@@ -134,7 +134,7 @@ export class Reporter implements VitestReporter {
 		);
 		const path = resolve(this.#root, this.#outputFile);
 		await mkdir(dirname(path), { recursive: true });
-		const report: StoryReport = { version: 2, stories: Arr.sort(records, byPlace) };
+		const report: StoryReport = { version: 3, stories: Arr.sort(records, byPlace) };
 		await writeFile(path, `${JSON.stringify(report, null, '\t')}\n`);
 	}
 }

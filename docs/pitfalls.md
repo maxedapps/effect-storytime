@@ -2,7 +2,6 @@
 
 ## Types
 
-- **A shared `Story.steps(...)` infers `never`.** Outside `Story.make` nothing tells it the Program's types, so every step in it fails to type-check. Name them: `Story.steps<Chat, Message, Command>(...)` ([stories.md](stories.md#shared-steps)). The same goes for any step built outside `make`.
 - **`Message` or `Command` isn't a `Program.Cases`.** A Program's `Message` and `Command` must list their `cases`. A `Schema.TaggedStruct`, a `Schema.Union` of structs or a plain struct doesn't, so wrap it: `Schema.TaggedUnion({ Award: { ... } })`.
 - **A Store's error type.** `Decider.Store<Key, State, Event, E>` defaults `E` to `never`. A database Store names its errors, such as `SqlError.SqlError | Schema.SchemaError`, and `handle` and `Decision.against` pass them on.
 - **A handler that can fail doesn't type-check.** `Loop`'s handler has the error type `never`. Turn every failure into a message the Program handles.
@@ -17,8 +16,8 @@
 - **`commands(...)` lists all pending commands.** It requires exactly the pending set, so list every pending command, or write `commands()` for none.
 - **Identity is canonical JSON.** `resolve` and `emit` find a pending command by all of its fields, and a Program cancels by the full value. Two commands that differ in any field are different commands, and two identical commands are one.
 - **`given` first and only once.** A second `given` fails. Use `restart()` to continue from a stored model, or write another tale.
-- **`anyOrder` takes 2 to 5 steps.** Group steps with `Story.steps(...)` to move them as one.
-- **A `when` needs its outcome right after it.** `Decision.when(...)` must be followed by `accepted(...)` or `rejected(...)`.
+- **`anyOrder` takes 2 to 5 steps.** Group steps with `steps(...)` to move them as one.
+- **A `when` needs its outcome right after it.** `when(...)` must be followed by `accepted(...)` or `rejected(...)`.
 - **`Decision.against` doesn't seed.** It loads the state under the key and fails with `the stored state differs from given` unless the test arranged it. Tests that share one `layer` share the Store, so use a key per test.
 
 ## Explorations

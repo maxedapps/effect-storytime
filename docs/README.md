@@ -11,7 +11,7 @@ Every TypeScript block here is a region of a file in this repository, marked by 
 | `effect-storytime` | `Decider`, `Program`, `Loop` | production code |
 | `effect-storytime/testing` | `Story`, `Decision`, `Exploration`, `Tale`, `Vitest`, `StoryRecord` | tests and tools |
 
-Each module is a namespace (`Decider.make`, `Story.send`, `Vitest.Reporter`). The domain entry imports nothing from `testing`, so production code loads none of it. `effect` 4.1.2 or newer is the one required peer; the testing entry also needs `vitest` 5.1 and `@effect/vitest` 4.1.2.
+Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The domain entry imports nothing from `testing`, so production code loads none of it. `effect` 4.1.2 or newer is the one required peer; the testing entry also needs `vitest` 5.1 and `@effect/vitest` 4.1.2.
 
 ## Pages
 

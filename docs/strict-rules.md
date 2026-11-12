@@ -12,7 +12,7 @@ Every story, decision and explored path runs these rules at every step. They are
 
 ## Failure messages
 
-A failure is a `Story.StoryFailure` whose `message` is one of these. `<what>` is `the model`, `the message`, `the command`, `the state`, `the event` or `the rejection`, and `<fn>` is `update`, `resume`, `decide` or `evolve`.
+A failure is a `Story.StoryFailure` whose `problem` is one of these. `<what>` is `the model`, `the message`, `the command`, `the state`, `the event` or `the rejection`, and `<fn>` is `update`, `resume`, `decide` or `evolve`.
 
 | Message | Cause | Fix |
 | --- | --- | --- |

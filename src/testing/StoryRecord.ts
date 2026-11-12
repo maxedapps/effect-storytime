@@ -31,7 +31,7 @@ export type StoryRecord = typeof StoryRecord.Type;
 
 /** A run's records, sorted by file and then test, with no timings or absolute paths. */
 export const StoryReport = Schema.Struct({
-	version: Schema.Literal(2),
+	version: Schema.Literal(3),
 	stories: Schema.Array(StoryRecord)
 });
 

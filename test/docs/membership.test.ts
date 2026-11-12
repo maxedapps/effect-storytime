@@ -20,17 +20,20 @@ import {
 } from '../examples/membership.ts';
 
 // #region lifecycle
+// The step builders, typed by the Decider.
+const decision = Decision.of(membership);
+
 const lifecycle = Decision.make(
 	'a membership is granted once and revoked once',
 	membership,
-	Decision.given(membership.initial),
-	Decision.when(Grant.make({ source: 'teachable', at })),
-	Decision.accepted(Granted.make({ source: 'teachable', at })),
-	Decision.when(Grant.make({ source: 'teachable', at: later })),
-	Decision.rejected(AlreadyActive.make({ since: at })),
-	Decision.when(Revoke.make({})),
-	Decision.accepted(Revoked.make({})),
-	Decision.state({ source: 'teachable', active: false, checkedAt: at })
+	decision.given(membership.initial),
+	decision.when(Grant.make({ source: 'teachable', at })),
+	decision.accepted(Granted.make({ source: 'teachable', at })),
+	decision.when(Grant.make({ source: 'teachable', at: later })),
+	decision.rejected(AlreadyActive.make({ since: at })),
+	decision.when(Revoke.make({})),
+	decision.accepted(Revoked.make({})),
+	decision.state({ source: 'teachable', active: false, checkedAt: at })
 );
 // #endregion lifecycle
 
@@ -38,22 +41,22 @@ const lifecycle = Decision.make(
 const checks = Decision.make(
 	'a check changes only what it finds changed',
 	membership,
-	Decision.given({ source: 'teachable', active: true, checkedAt: at }),
+	decision.given({ source: 'teachable', active: true, checkedAt: at }),
 	// No change, no events: the decision is accepted with none.
-	Decision.when(Check.make({ active: true, at: later })),
-	Decision.accepted(),
-	Decision.satisfies('still active', (state) => state.active),
-	Decision.when(Check.make({ active: false, at: later })),
-	Decision.accepted(Checked.make({ active: false, at: later })),
-	Decision.state({ source: 'teachable', active: false, checkedAt: later })
+	decision.when(Check.make({ active: true, at: later })),
+	decision.accepted(),
+	decision.satisfies('still active', (state) => state.active),
+	decision.when(Check.make({ active: false, at: later })),
+	decision.accepted(Checked.make({ active: false, at: later })),
+	decision.state({ source: 'teachable', active: false, checkedAt: later })
 );
 
 const manual = Decision.make(
 	'a manual membership is never checked',
 	membership,
-	Decision.given({ source: 'manual', active: true, checkedAt: at }),
-	Decision.when(Check.make({ active: false, at: later })),
-	Decision.rejected(Manual.make({}))
+	decision.given({ source: 'manual', active: true, checkedAt: at }),
+	decision.when(Check.make({ active: false, at: later })),
+	decision.rejected(Manual.make({}))
 );
 // #endregion checks
 

@@ -22,7 +22,7 @@ import type { Problem } from './internal/check.ts';
 import { caser, strict } from './internal/decider.ts';
 import { machine } from './internal/machine.ts';
 import type { State as Running } from './internal/machine.ts';
-import { TypeId } from './internal/tale.ts';
+import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import type { Program, Tagged } from '../Program.ts';
 import * as Story from './Story.ts';
@@ -88,7 +88,7 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	options: Options<NoInfer<Model>, NoInfer<Message>, NoInfer<Command>>
 ): Exploration => {
 	const restarts = options.restarts ?? true;
-	return new Exploration({
+	const exploration = new Exploration({
 		title,
 		subject: program,
 		...settled(title, options),
@@ -103,6 +103,7 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 			walker(title, program, options.replies ?? nothing, options.emits ?? nothing)
 		)
 	});
+	return made(exploration, make);
 };
 
 /** Explores a Decider: paths of commands decided one after another from a given state. */
@@ -111,19 +112,22 @@ export const decisions = <State, Command, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>,
 	options: DecisionOptions<NoInfer<State>, NoInfer<Command>> = {}
 ): Exploration =>
-	new Exploration({
-		title,
-		subject: decider,
-		...settled(title, options),
-		restarts: false,
-		walks: Arbitrary.map(
-			Arbitrary.all({
-				start: options.given ?? Arbitrary.Constant(decider.initial),
-				commands: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Command))
-			}),
-			deciderWalker(title, decider)
-		)
-	});
+	made(
+		new Exploration({
+			title,
+			subject: decider,
+			...settled(title, options),
+			restarts: false,
+			walks: Arbitrary.map(
+				Arbitrary.all({
+					start: options.given ?? Arbitrary.Constant(decider.initial),
+					commands: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Command))
+				}),
+				deciderWalker(title, decider)
+			)
+		}),
+		decisions
+	);
 
 const summary = (exploration: Exploration) =>
 	`explore ${exploration.runs} runs of up to ${exploration.steps} steps, seed ${JSON.stringify(exploration.seed)}${exploration.restarts ? ', with restarts' : ''}`;
@@ -183,6 +187,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	emits: (command: Command) => ReadonlyArray<Message>
 ) => {
 	const rules = machine(program, false);
+	const story = Story.of(program);
 
 	/** Answers the pending command at `pick` with its reply or stream message at `choice`. */
 	const reply = (
@@ -197,11 +202,11 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 					Arr.match(
 						[
 							...replies(command).map((message): Move<Model, Message, Command> => [
-								Story.resolve(command, message),
+								story.resolve(command, message),
 								rules.resolve(state, command, Option.some(message))
 							]),
 							...emits(command).map((message): Move<Model, Message, Command> => [
-								Story.emit(command, message),
+								story.emit(command, message),
 								rules.emit(state, command, message)
 							])
 						],
@@ -223,15 +228,15 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 		action: Action<Message>
 	): Option.Option<Move<Model, Message, Command>> =>
 		Action.$match(action, {
-			Send: ({ message }) => moved(Story.send(message), rules.send(state, message)),
+			Send: ({ message }) => moved(story.send(message), rules.send(state, message)),
 			Reply: ({ pick, choice }) => reply(state, pick, choice),
-			Restart: () => moved(Story.restart(), rules.restart(state))
+			Restart: () => moved(story.restart(), rules.restart(state))
 		});
 
 	return Effect.fnUntraced(function* (
 		path: Path<Model, Message>
 	): Effect.fn.Return<ReadonlyArray<string>, Broken> {
-		const told: Array<Story.Step<Model, Message, Command>> = [Story.given(path.start)];
+		const told: Array<Story.Step<Model, Message, Command>> = [story.given(path.start)];
 		const broken = (problem: Problem) =>
 			new Broken({
 				step: told.length,
@@ -258,12 +263,13 @@ const deciderWalker = <State, Command, Event, Rejection>(
 ) => {
 	const rules = strict(decider);
 	const touch = caser(decider);
+	const decision = Decision.of(decider);
 	return Effect.fnUntraced(function* (path: {
 		readonly start: State;
 		readonly commands: ReadonlyArray<Command>;
 	}): Effect.fn.Return<ReadonlyArray<string>, Broken> {
 		const told: Array<Decision.Step<State, Command, Event, Rejection>> = [
-			Decision.given(path.start)
+			decision.given(path.start)
 		];
 		const broken = (problem: Problem) =>
 			new Broken({
@@ -274,7 +280,7 @@ const deciderWalker = <State, Command, Event, Rejection>(
 		let state = yield* Effect.mapError(rules.check(path.start), broken);
 		const cases = [...touch.state(state)];
 		for (const command of path.commands) {
-			told.push(Decision.when(command));
+			told.push(decision.when(command));
 			const ruled = yield* Effect.mapError(rules.rule(state, command), broken);
 			cases.push(...touch.ruled(command, ruled));
 			state = ruled.reached;
@@ -322,26 +328,32 @@ export const check = Effect.fnUntraced(function* (
 		// Every path passes or fails, so a property error is the only way a path is falsified.
 		Match.when({ failure: Predicate.isTagged('PropertyError') }, ({ failure: { error }, replay }) =>
 			Effect.fail(
-				new Story.StoryFailure({
-					title,
-					step: error.step,
-					line,
-					message: error.problem.message,
-					expected: error.problem.expected,
-					actual: error.problem.actual,
-					counterexample: error.counterexample,
-					replay
-				})
+				located(
+					exploration,
+					new Story.StoryFailure({
+						title,
+						step: error.step,
+						line,
+						problem: error.problem.message,
+						expected: error.problem.expected,
+						actual: error.problem.actual,
+						counterexample: error.counterexample,
+						replay
+					})
+				)
 			)
 		),
 		Match.orElse((unfinished) =>
 			Effect.fail(
-				new Story.StoryFailure({
-					title,
-					step: 1,
-					line,
-					message: String(Arbitrary.formatCheckFailure(unfinished))
-				})
+				located(
+					exploration,
+					new Story.StoryFailure({
+						title,
+						step: 1,
+						line,
+						problem: String(Arbitrary.formatCheckFailure(unfinished))
+					})
+				)
 			)
 		)
 	);

@@ -11,7 +11,7 @@ it.effect('a report reads back as typed records', () =>
 	Effect.gen(function* () {
 		// #region decode
 		const text = yield* Effect.promise(() => readFile(path, 'utf8'));
-		// Fails with a SchemaError for anything but a version 2 report.
+		// Fails with a SchemaError for anything but a version 3 report.
 		const report = yield* StoryRecord.decode(text);
 		const failed = report.stories.find((record) => record.status === 'failed');
 		// #endregion decode
@@ -26,7 +26,7 @@ it.effect('a report reads back as typed records', () =>
 			failure: {
 				step: 2,
 				line: 'explore 100 runs of up to 30 steps, seed "the lamp counts switches", with restarts',
-				message: 'invariant countIsSmall does not hold',
+				problem: 'invariant countIsSmall does not hold',
 				actual: '{"at":"2026-11-04T00:00:00.000Z","count":10,"on":1}',
 				// The shrunk path as a story; `step` numbers its failing line.
 				counterexample: [

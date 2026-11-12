@@ -9,6 +9,10 @@ import { membership, none, NotActive, Revoke } from './examples/membership.ts';
 const { Asked, Answered, Stopped } = Message.cases;
 const { Ask, SaveTurn } = Command.cases;
 
+const story = Story.of(chat);
+const decision = Decision.of(membership);
+const lamp = Story.of(Lamp.lamp);
+
 const asked = Asked.make({ turn: 't1', text: 'Why?' });
 const ask = Ask.make({ turn: 't1', text: 'Why?' });
 const saved = SaveTurn.make({ id: 't1', question: 'Why?', answer: '' });
@@ -16,10 +20,10 @@ const saved = SaveTurn.make({ id: 't1', question: 'Why?', answer: '' });
 const stops = Story.make(
 	'a question is stopped',
 	chat,
-	Story.given(ready(1)),
-	Story.send(asked),
-	Story.commands(ask),
-	Story.send(Stopped.make({}))
+	story.given(ready(1)),
+	story.send(asked),
+	story.commands(ask),
+	story.send(Stopped.make({}))
 );
 
 const switches = Exploration.make('the lamp switches', Lamp.lamp, {
@@ -53,9 +57,9 @@ const swings = Exploration.decisions('the door swings', door, { runs: 5 });
 const revokes = Decision.make(
 	'only an active membership is revoked',
 	membership,
-	Decision.given(none),
-	Decision.when(Revoke.make({})),
-	Decision.rejected(NotActive.make({}))
+	decision.given(none),
+	decision.when(Revoke.make({})),
+	decision.rejected(NotActive.make({}))
 );
 
 describe('Tale', () => {
@@ -169,9 +173,9 @@ describe('Tale', () => {
 					model: Lamp.lamp.update(current, message).model,
 					commands: [Lamp.Log.make({ text: 'switched' })]
 				})),
-				Story.given(Lamp.off),
-				Story.send(Lamp.switched()),
-				Story.resolve(Lamp.Log.make({ text: 'switched' }))
+				lamp.given(Lamp.off),
+				lamp.send(Lamp.switched()),
+				lamp.resolve(Lamp.Log.make({ text: 'switched' }))
 			);
 			yield* Tale.covers(counted.program, [counted]);
 		})
@@ -182,10 +186,10 @@ describe('Tale', () => {
 			const answers = Story.make(
 				'a question is answered',
 				chat,
-				Story.given(ready(1)),
-				Story.send(asked),
-				Story.resolve(ask, Answered.make({ turn: 't1', left: 0 })),
-				Story.resolve(saved)
+				story.given(ready(1)),
+				story.send(asked),
+				story.resolve(ask, Answered.make({ turn: 't1', left: 0 })),
+				story.resolve(saved)
 			);
 			const uncovered = yield* Effect.flip(Tale.covers(chat, [stops, answers]));
 			expect(uncovered._tag).toBe('Uncovered');

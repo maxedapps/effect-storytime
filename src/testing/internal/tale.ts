@@ -26,3 +26,29 @@ export interface Tale {
 	readonly title: string;
 	readonly [TypeId]: () => Told;
 }
+
+/** The stack each tale was made from, kept beside it so the tale itself stays plain data. */
+const sites = new WeakMap<Tale, string>();
+
+/**
+ * Remembers where `tale` was made: the stack of whoever called `maker`, so its failures point at
+ * the test instead of this library.
+ */
+export const made = <T extends Tale>(
+	tale: T,
+	maker: (...args: ReadonlyArray<never>) => Tale
+): T => {
+	// Stryker disable next-line ObjectLiteral,StringLiteral: captureStackTrace always sets `stack`
+	const site = { stack: '' };
+	Error.captureStackTrace(site, maker);
+	// The first line is the holder's header, not a frame.
+	sites.set(tale, site.stack.slice(site.stack.indexOf('\n') + 1));
+	return tale;
+};
+
+/** Gives `failure` the stack of the call that made `tale`, so Vitest's code frame shows the tale. */
+export const located = (tale: Tale, failure: StoryFailure): StoryFailure => {
+	const site = sites.get(tale);
+	if (site !== undefined) failure.stack = `${failure.name}: ${failure.message}\n${site}`;
+	return failure;
+};

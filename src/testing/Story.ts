@@ -7,7 +7,7 @@ import { describer } from '../internal/canonical.ts';
 import { Problem } from './internal/check.ts';
 import { machine } from './internal/machine.ts';
 import type { State } from './internal/machine.ts';
-import { TypeId } from './internal/tale.ts';
+import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import type { Program, Tagged } from '../Program.ts';
 
@@ -33,66 +33,54 @@ interface StepDefinition extends Data.TaggedEnum.WithGenerics<3> {
 
 const Step = Data.taggedEnum<StepDefinition>();
 
-/** Starts the story from a model. It comes first and only once. */
-export const given = <Model = never, Message = never, Command = never>(
-	model: NoInfer<Model>
-): Step<Model, Message, Command> => Step.Given({ model });
+/** The steps of stories about one Program, typed by it, so steps built anywhere need no type parameters. */
+export interface Builders<Model, Message, Command> {
+	/** Starts the story from a model. It comes first and only once. */
+	readonly given: (model: Model) => Step<Model, Message, Command>;
+	/** Sends a message through `update`. */
+	readonly send: (message: Message) => Step<Model, Message, Command>;
+	/** Requires the model to equal `expected`. */
+	readonly model: (expected: Model) => Step<Model, Message, Command>;
+	/** Requires the model to pass a check, shown in story lines by its label. */
+	readonly satisfies: (
+		label: string,
+		check: (model: Model) => boolean
+	) => Step<Model, Message, Command>;
+	/** Requires exactly these commands to be pending, in any order; `commands()` means none. */
+	readonly commands: (...expected: ReadonlyArray<Command>) => Step<Model, Message, Command>;
+	/** Completes a pending command and feeds its reply, if it has one, through `update`. */
+	readonly resolve: (command: Command, reply?: Message) => Step<Model, Message, Command>;
+	/** Feeds one message from a pending streaming command, which stays pending. */
+	readonly emit: (command: Command, message: Message) => Step<Model, Message, Command>;
+	/**
+	 * Restarts as after a crash: the model goes through JSON, every pending command is dropped and
+	 * `resume` decides what to redo.
+	 */
+	readonly restart: () => Step<Model, Message, Command>;
+	/**
+	 * Runs the rest of the story once per order of these 2 to 5 steps. A `resolve` or `emit` is
+	 * skipped when its command was cancelled earlier in the same order.
+	 */
+	readonly anyOrder: (...steps: Steps<Model, Message, Command>) => Step<Model, Message, Command>;
+	/** Groups steps, so a story can share a common part. */
+	readonly steps: (...grouped: Steps<Model, Message, Command>) => Step<Model, Message, Command>;
+}
 
-/** Sends a message through `update`. */
-export const send = <Model = never, Message = never, Command = never>(
-	message: NoInfer<Message>
-): Step<Model, Message, Command> => Step.Send({ message });
-
-/** Requires the model to equal `expected`. */
-export const model = <Model = never, Message = never, Command = never>(
-	expected: NoInfer<Model>
-): Step<Model, Message, Command> => Step.Model({ expected });
-
-/** Requires the model to pass a check, shown in story lines by its label. */
-export const satisfies = <Model = never, Message = never, Command = never>(
-	label: string,
-	check: (model: NoInfer<Model>) => boolean
-): Step<Model, Message, Command> => Step.Satisfies({ label, check });
-
-/** Requires exactly these commands to be pending, in any order; `commands()` means none. */
-export const commands = <Model = never, Message = never, Command = never>(
-	...expected: ReadonlyArray<NoInfer<Command>>
-): Step<Model, Message, Command> => Step.Commands({ commands: expected });
-
-/** Completes a pending command and feeds its reply, if it has one, through `update`. */
-export const resolve = <Model = never, Message = never, Command = never>(
-	command: NoInfer<Command>,
-	reply?: NoInfer<Message>
-): Step<Model, Message, Command> => Step.Resolve({ command, reply: Option.fromUndefinedOr(reply) });
-
-/** Feeds one message from a pending streaming command, which stays pending. */
-export const emit = <Model = never, Message = never, Command = never>(
-	command: NoInfer<Command>,
-	message: NoInfer<Message>
-): Step<Model, Message, Command> => Step.Emit({ command, message });
-
-/**
- * Restarts as after a crash: the model goes through JSON, every pending command is dropped and
- * `resume` decides what to redo.
- */
-export const restart = <Model = never, Message = never, Command = never>(): Step<
-	Model,
-	Message,
-	Command
-> => Step.Restart();
-
-/**
- * Runs the rest of the story once per order of these 2 to 5 steps. A `resolve` or `emit` is
- * skipped when its command was cancelled earlier in the same order.
- */
-export const anyOrder = <Model = never, Message = never, Command = never>(
-	...steps: Steps<NoInfer<Model>, NoInfer<Message>, NoInfer<Command>>
-): Step<Model, Message, Command> => Step.AnyOrder({ steps });
-
-/** Groups steps, so a story can share a common part. */
-export const steps = <Model = never, Message = never, Command = never>(
-	...grouped: Steps<NoInfer<Model>, NoInfer<Message>, NoInfer<Command>>
-): Step<Model, Message, Command> => Step.Group({ steps: grouped });
+/** The step builders for stories about `program`; only its types matter. */
+export const of = <Model, Message extends Tagged, Command extends Tagged>(
+	_program: Program<Model, Message, Command>
+): Builders<Model, Message, Command> => ({
+	given: (model) => Step.Given({ model }),
+	send: (message) => Step.Send({ message }),
+	model: (expected) => Step.Model({ expected }),
+	satisfies: (label, check) => Step.Satisfies({ label, check }),
+	commands: (...expected) => Step.Commands({ commands: expected }),
+	resolve: (command, reply) => Step.Resolve({ command, reply: Option.fromUndefinedOr(reply) }),
+	emit: (command, message) => Step.Emit({ command, message }),
+	restart: () => Step.Restart(),
+	anyOrder: (...steps) => Step.AnyOrder({ steps }),
+	steps: (...grouped) => Step.Group({ steps: grouped })
+});
 
 export class Story<Model, Message extends Tagged, Command extends Tagged> extends Data.TaggedClass(
 	'Story'
@@ -110,19 +98,44 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 	title: string,
 	program: Program<Model, Message, Command>,
 	...body: Steps<Model, Message, Command>
-): Story<Model, Message, Command> => new Story({ title, program, steps: body });
+): Story<Model, Message, Command> => made(new Story({ title, program, steps: body }), make);
 
-/** A failed story, with the step (its line number in `lines`) where it failed. */
+/**
+ * A failed tale, with the step (its line number in `lines`) where it failed. Its message tells all
+ * of it but a differing `expected` and `actual`, which test runners diff, and its stack starts at
+ * the call that made the tale.
+ */
 export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailure', {
 	title: Schema.String,
 	step: Schema.Int,
 	line: Schema.String,
-	message: Schema.String,
+	problem: Schema.String,
 	expected: Schema.optional(Schema.String),
 	actual: Schema.optional(Schema.String),
 	counterexample: Schema.optional(Schema.Array(Schema.String)),
 	replay: Schema.optional(Schema.String)
-}) {}
+}) {
+	override get message() {
+		const { step, line, expected, actual, counterexample, replay } = this;
+		const where =
+			counterexample === undefined
+				? [`step ${step}: ${line}`]
+				: [
+						`step ${step} of the counterexample:`,
+						...counterexample.map((told, index) =>
+							index + 1 === step ? `> ${index + 1} ${told}` : `  ${index + 1} ${told}`
+						)
+					];
+		return [
+			this.problem,
+			...where,
+			...(expected === undefined && actual !== undefined
+				? [`actual: ${actual.replaceAll('\n', '\n  ')}`]
+				: []),
+			...(replay === undefined ? [] : [`replay: ${replay}`])
+		].join('\n');
+	}
+}
 
 /**
  * What a passing story reached: its final model, also as a line, and the cases it sent, produced
@@ -241,14 +254,17 @@ export const run = Effect.fnUntraced(function* <
 
 	const fail =
 		(entry: { readonly no: number; readonly line: string }, order: string) => (problem: Problem) =>
-			new StoryFailure({
-				title,
-				step: entry.no,
-				line: entry.line,
-				message: `${order}${problem.message}`,
-				expected: problem.expected,
-				actual: problem.actual
-			});
+			located(
+				story,
+				new StoryFailure({
+					title,
+					step: entry.no,
+					line: entry.line,
+					problem: `${order}${problem.message}`,
+					expected: problem.expected,
+					actual: problem.actual
+				})
+			);
 
 	const end = { no: all.length + 1, line: 'end' };
 

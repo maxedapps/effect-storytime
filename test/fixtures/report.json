@@ -1,5 +1,5 @@
 {
-	"version": 2,
+	"version": 3,
 	"stories": [
 		{
 			"kind": "Exploration",
@@ -13,7 +13,7 @@
 			"failure": {
 				"step": 2,
 				"line": "explore 100 runs of up to 30 steps, seed \"the lamp counts switches\", with restarts",
-				"message": "invariant countIsSmall does not hold",
+				"problem": "invariant countIsSmall does not hold",
 				"actual": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":10,\"on\":1}",
 				"counterexample": [
 					"given {\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}",
@@ -94,7 +94,7 @@
 			"failure": {
 				"step": 3,
 				"line": "commands none",
-				"message": "the pending commands differ",
+				"problem": "the pending commands differ",
 				"expected": "",
 				"actual": "Ask {\"text\":\"Why?\",\"turn\":\"t1\"}"
 			}

@@ -15,6 +15,7 @@ A lean Effect 4 domain library with strict story tests (README.md). Design decis
 - Idiomatic Effect 4 at the version in the pnpm catalog; check APIs in its source, not memory.
 - Two entries, each a namespace per public module: the domain in `src/index.ts` (modules in `src/`, internals in `src/internal/`) and the tales with the Vitest adapter in `src/testing/index.ts` (internals in `src/testing/internal/`). The domain imports nothing from `testing`; an oxlint `no-restricted-imports` rule enforces it.
 - Tests import the public API by package name (`effect-storytime`, `effect-storytime/testing`), as consumers do; tsconfig `paths` point both at `src`.
+- Scope is judged by general use cases: a building block stays if apps like this need it. infinite is a reference, not the measure.
 - Examples shared by tests live in `test/examples/`, modelled on infinite's Chat, Conversation and membership code.
 
 ## Docs

@@ -4,7 +4,18 @@
  * only enqueue their messages, so a command its own message cancels or replaces never cuts an
  * apply short, and a message from a command cancelled or replaced since it was enqueued is dropped.
  */
-import { Deferred, Effect, FiberMap, Option, Queue, Scope, Stream, SubscriptionRef } from 'effect';
+import {
+	Cause,
+	Deferred,
+	Effect,
+	Fiber,
+	FiberMap,
+	Option,
+	Queue,
+	Scope,
+	Stream,
+	SubscriptionRef
+} from 'effect';
 import { stringifier } from './internal/canonical.ts';
 import type { Next, Program, Tagged } from './Program.ts';
 
@@ -31,7 +42,10 @@ export interface Options<Model, Message, Command extends Tagged, R> {
 }
 
 export interface Loop<Model, Message> {
-	/** Applies a message and starts its commands; completes once the model is updated. */
+	/**
+	 * Applies a message and starts its commands; completes once the model is updated. Once the
+	 * Loop's scope has closed it is interrupted.
+	 */
 	readonly dispatch: (message: Message) => Effect.Effect<void>;
 	readonly model: Effect.Effect<Model>;
 	readonly changes: Stream.Stream<Model>;
@@ -46,7 +60,8 @@ interface Delivery<Message> {
 
 /**
  * Starts a Loop in the current scope. A stored model is resumed, otherwise `init` applies. Each
- * model is saved before its commands start; closing the scope interrupts every command.
+ * model is saved before its commands start. Closing the scope applies the messages already
+ * dispatched, then interrupts every command.
  */
 export const make = Effect.fnUntraced(function* <
 	Model,
@@ -62,14 +77,17 @@ export const make = Effect.fnUntraced(function* <
 	const stored = options.persist ? yield* options.persist.load : Option.none<Model>();
 	const start = Option.match(stored, { onNone: () => options.init, onSome: program.resume });
 	const model = yield* SubscriptionRef.make(start.model);
-	const fibers = yield* FiberMap.make<string>();
-	const deliveries = yield* Queue.unbounded<Delivery<Message>>();
+	// The Loop's own scope releases in order whatever the caller's strategy: the deliveries drain
+	// before the FiberMap interrupts the commands they started.
+	const scope = yield* Scope.fork(yield* Effect.scope, 'sequential');
+	const fibers = yield* Scope.provide(FiberMap.make<string>(), scope);
+	const deliveries = yield* Queue.unbounded<Delivery<Message>, Cause.Done>();
 
 	const sender = (live: Effect.Effect<boolean>) => (message: Message) =>
 		Effect.gen(function* () {
 			const applied = yield* Deferred.make<void>();
-			yield* Queue.offer(deliveries, { message, applied, live });
-			yield* Deferred.await(applied);
+			const open = yield* Queue.offer(deliveries, { message, applied, live });
+			return yield* open ? Deferred.await(applied) : Effect.interrupt;
 		});
 
 	const run = (command: Command, key: string): Effect.Effect<void, never, R> =>
@@ -108,7 +126,13 @@ export const make = Effect.fnUntraced(function* <
 	});
 
 	yield* apply(start);
-	yield* Effect.forkScoped(Effect.forever(Effect.flatMap(Queue.take(deliveries), deliver)));
+	yield* Scope.provide(
+		Effect.acquireRelease(
+			Effect.forkDetach(Stream.runForEach(Stream.fromQueue(deliveries), deliver)),
+			(applying) => Effect.andThen(Queue.end(deliveries), Fiber.await(applying))
+		),
+		scope
+	);
 
 	return {
 		dispatch: sender(Effect.succeed(true)),

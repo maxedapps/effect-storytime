@@ -9,21 +9,24 @@ const { Ask, SaveTurn } = Command.cases;
 const { Ready, Asking, Limited, SignedOut } = Chat.cases;
 
 // #region answers
+// The step builders, typed by the Program.
+const story = Story.of(chat);
+
 const ask = Ask.make({ turn: 't1', text: 'Why Effect?' });
 const turn = { id: 't1', question: 'Why Effect?', answer: 'Typed errors.' };
 
 const answers = Story.make(
 	'a question is answered while it streams',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed errors.' })),
-	Story.resolve(ask, Answered.make({ turn: 't1', left: 1 })),
-	Story.commands(SaveTurn.make(turn)),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.emit(ask, Delta.make({ turn: 't1', text: 'Typed errors.' })),
+	story.resolve(ask, Answered.make({ turn: 't1', left: 1 })),
+	story.commands(SaveTurn.make(turn)),
 	// A command that answers with no message resolves without a reply.
-	Story.resolve(SaveTurn.make(turn)),
-	Story.model(Ready.make({ turns: [turn], left: 1 }))
+	story.resolve(SaveTurn.make(turn)),
+	story.model(Ready.make({ turns: [turn], left: 1 }))
 );
 // #endregion answers
 
@@ -31,16 +34,16 @@ const answers = Story.make(
 const stops = Story.make(
 	'a stop and a late delta land in either order',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.anyOrder(
-		Story.send(Stopped.make({})),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.anyOrder(
+		story.send(Stopped.make({})),
 		// Skipped in the order where the stop cancelled `ask` first.
-		Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' }))
+		story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' }))
 	),
-	Story.model(ready(2)),
-	Story.commands()
+	story.model(ready(2)),
+	story.commands()
 );
 // #endregion stops
 
@@ -48,40 +51,40 @@ const stops = Story.make(
 const resumes = Story.make(
 	'a restart asks again from the start',
 	chat,
-	Story.given(ready(2)),
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask),
-	Story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' })),
+	story.given(ready(2)),
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask),
+	story.emit(ask, Delta.make({ turn: 't1', text: 'Typed' })),
 	// The model goes through JSON, `ask` is dropped and `resume` asks again with an empty answer.
-	Story.restart(),
-	Story.model(Asking.make({ turns: [], left: 2, turn: 't1', question: 'Why Effect?', answer: '' })),
-	Story.commands(ask)
+	story.restart(),
+	story.model(Asking.make({ turns: [], left: 2, turn: 't1', question: 'Why Effect?', answer: '' })),
+	story.commands(ask)
 );
 // #endregion resumes
 
 // #region shared
-// A part several stories share. Outside `Story.make` nothing infers its types, so it names them.
-const asked = Story.steps<Chat, Message, Command>(
-	Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-	Story.commands(ask)
+// A part several stories share, built once.
+const asked = story.steps(
+	story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+	story.commands(ask)
 );
 
 const limited = Story.make(
 	'a refusal at the limit locks the chat',
 	chat,
-	Story.given(ready(2)),
+	story.given(ready(2)),
 	asked,
-	Story.resolve(ask, Refused.make({ turn: 't1', reason: 'LimitReached' })),
-	Story.satisfies('limited', Chat.guards.Limited)
+	story.resolve(ask, Refused.make({ turn: 't1', reason: 'LimitReached' })),
+	story.satisfies('limited', Chat.guards.Limited)
 );
 
 const signedOut = Story.make(
 	'a refusal for a signed-out user signs the chat out',
 	chat,
-	Story.given(ready(2)),
+	story.given(ready(2)),
 	asked,
-	Story.resolve(ask, Refused.make({ turn: 't1', reason: 'SignedOut' })),
-	Story.model(SignedOut.make({}))
+	story.resolve(ask, Refused.make({ turn: 't1', reason: 'SignedOut' })),
+	story.model(SignedOut.make({}))
 );
 // #endregion shared
 
@@ -171,10 +174,10 @@ describe('chat tales', () => {
 			const forgets = Story.make(
 				'an answer is forgotten',
 				chat,
-				Story.given(ready(2)),
-				Story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
-				Story.commands(ask),
-				Story.resolve(ask, Answered.make({ turn: 't1', left: 1 }))
+				story.given(ready(2)),
+				story.send(Asked.make({ turn: 't1', text: 'Why Effect?' })),
+				story.commands(ask),
+				story.resolve(ask, Answered.make({ turn: 't1', left: 1 }))
 				// SaveTurn is never asserted.
 			);
 			const failure = yield* Effect.flip(Story.run(forgets));
@@ -183,7 +186,7 @@ describe('chat tales', () => {
 				title: 'an answer is forgotten',
 				step: 5,
 				line: 'end',
-				message: 'the story ended with 1 unasserted command(s)',
+				problem: 'the story ended with 1 unasserted command(s)',
 				actual: 'SaveTurn {"answer":"","id":"t1","question":"Why Effect?"}'
 			});
 			// #endregion failure

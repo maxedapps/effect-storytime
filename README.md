@@ -110,7 +110,7 @@ export const form = Program.make({
 });
 ```
 
-Run the Decider with `Decider.handle(seats, Seats)` on a Store service ([docs/decider.md](docs/decider.md)), and the Program with `Loop.make(form, { init, handler })` ([docs/loop.md](docs/loop.md)).
+Run the Decider with `Decider.handle(seats, SeatStore)`, where `SeatStore` is your app's Store service ([docs/decider.md](docs/decider.md)), and the Program with `Loop.make(form, { init, handler })` ([docs/loop.md](docs/loop.md)).
 
 ## Quick start: the tales
 
@@ -129,29 +129,33 @@ const { Booked, Cancelled } = Event.cases;
 const { Submitted, Succeeded, Failed } = Message.cases;
 const { BookSeat } = Request.cases;
 
+// Step builders, typed by the Decider and the Program they tell about.
+const decision = Decision.of(seats);
+const story = Story.of(form);
+
 // A decision: given a state, each command is accepted with its events or rejected.
 const sellsOut = Decision.make(
 	'the last seat sells out',
 	seats,
-	Decision.given({ capacity: 2, guests: ['ada'] }),
-	Decision.when(Book.make({ guest: 'bo' })),
-	Decision.accepted(Booked.make({ guest: 'bo' })),
-	Decision.when(Book.make({ guest: 'cy' })),
-	Decision.rejected(Rejection.cases.SoldOut.make({})),
-	Decision.when(Cancel.make({ guest: 'ada' })),
-	Decision.accepted(Cancelled.make({ guest: 'ada' })),
-	Decision.state({ capacity: 2, guests: ['bo'] })
+	decision.given({ capacity: 2, guests: ['ada'] }),
+	decision.when(Book.make({ guest: 'bo' })),
+	decision.accepted(Booked.make({ guest: 'bo' })),
+	decision.when(Book.make({ guest: 'cy' })),
+	decision.rejected(Rejection.cases.SoldOut.make({})),
+	decision.when(Cancel.make({ guest: 'ada' })),
+	decision.accepted(Cancelled.make({ guest: 'ada' })),
+	decision.state({ capacity: 2, guests: ['bo'] })
 );
 
 // A story: messages go in, and every command the Program asks for is asserted.
 const books = Story.make(
 	'a submitted form books a seat',
 	form,
-	Story.given(Form.cases.Editing.make({})),
-	Story.send(Submitted.make({ guest: 'ada' })),
-	Story.commands(BookSeat.make({ guest: 'ada' })),
-	Story.resolve(BookSeat.make({ guest: 'ada' }), Succeeded.make({})),
-	Story.model(Form.cases.Done.make({ guest: 'ada' }))
+	story.given(Form.cases.Editing.make({})),
+	story.send(Submitted.make({ guest: 'ada' })),
+	story.commands(BookSeat.make({ guest: 'ada' })),
+	story.resolve(BookSeat.make({ guest: 'ada' }), Succeeded.make({})),
+	story.model(Form.cases.Done.make({ guest: 'ada' }))
 );
 
 // An exploration: 100 random paths of messages, replies and restarts, each checked with the
@@ -170,7 +174,7 @@ describe('seats', () => {
 });
 ```
 
-Each tale is a test named by its title. A failure names the step and line that broke a rule, with `expected` and `actual` for Vitest to diff, and a failing exploration reports its shrunk path as story lines. `covers` fails with the cases no tale touches.
+Each tale is a test named by its title. Its failure message names the step and line that broke a rule, with `expected` and `actual` for Vitest to diff, and Vitest's code frame points at the tale. A failing exploration's message shows its shrunk path as story lines and the token that replays it. `covers` fails with the cases no tale touches.
 
 Add the reporter to `vitest.config.ts`, and every run writes the story record, a deterministic JSON file with every tale's lines, status, final model and cases ([docs/story-record.md](docs/story-record.md)):
 

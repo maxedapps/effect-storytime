@@ -37,7 +37,7 @@ const answered = yield* loop.changes.pipe(Stream.filter(Chat.guards.Ready), Stre
 
 | Member | Type | Meaning |
 | --- | --- | --- |
-| `dispatch(message)` | `Effect<void>` | Applies the message and starts its commands. It completes once the model is updated, before the commands finish. |
+| `dispatch(message)` | `Effect<void>` | Applies the message and starts its commands. It completes once the model is updated, before the commands finish. Once the Loop's scope has closed, it is interrupted. |
 | `model` | `Effect<Model>` | The current model. |
 | `changes` | `Stream<Model>` | The current model, then every model after it. |
 
@@ -46,7 +46,7 @@ const answered = yield* loop.changes.pipe(Stream.filter(Chat.guards.Ready), Stre
 - A command fiber is keyed by the command's canonical JSON. A command identical to a running one interrupts and replaces it.
 - `cancels` interrupts a running command. A message it had already sent but the Loop hadn't applied yet is dropped, and so is a message from a replaced command.
 - Command fibers only enqueue their messages, and the Loop applies them one at a time in order. A command whose own message cancels it never cuts an `update` short.
-- Closing the Loop's scope interrupts every command.
+- Closing the Loop's scope applies the messages already dispatched, then interrupts every command. A `dispatch` after that is interrupted.
 
 The handler's error channel is `never`: a failure must become a message (`Effect.catchTag(..., () => Effect.succeed(Failed.make(...)))`), so the Program decides what it means.
 

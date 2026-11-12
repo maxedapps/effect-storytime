@@ -3,12 +3,14 @@ import { Effect } from 'effect';
 import { Decision, Vitest } from 'effect-storytime/testing';
 import { membership, none, NotActive, Revoke } from '../../../examples/membership.ts';
 
+const decision = Decision.of(membership);
+
 const revokes = Decision.make(
 	'only an active membership is revoked',
 	membership,
-	Decision.given(none),
-	Decision.when(Revoke.make({})),
-	Decision.rejected(NotActive.make({}))
+	decision.given(none),
+	decision.when(Revoke.make({})),
+	decision.rejected(NotActive.make({}))
 );
 
 Vitest.stories(revokes);
@@ -17,7 +19,7 @@ it('tells no tale', () => {
 	expect(Decision.lines(revokes)).toHaveLength(3);
 });
 
-const grants = Decision.make('a membership starts inactive', membership, Decision.given(none));
+const grants = Decision.make('a membership starts inactive', membership, decision.given(none));
 
 // Told in the order the run's environment names, as concurrent tells finish in any order.
 it.effect('tells tales in any order', (ctx) => {

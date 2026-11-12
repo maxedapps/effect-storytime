@@ -70,7 +70,7 @@ Decider paths never restart.
 
 `Exploration.check(exploration, options?)` gives `Effect<Exploration.Explored, StoryFailure>`, where `Explored` is `{ runs, cases }`. `Tale.run` and `Vitest.stories` call it for you.
 
-An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds:
+An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds the fields below, and its `message` shows them: the counterexample with `>` at the failing step, then the replay token. Its stack starts at the `Exploration.make` or `Exploration.decisions` call.
 
 | Field | Meaning |
 | --- | --- |

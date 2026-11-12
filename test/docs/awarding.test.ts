@@ -19,28 +19,30 @@ import type { Awarding } from '../examples/awarding.ts';
 const { LecturesCompleted, Awarded } = Message.cases;
 
 // #region tales
+const story = Story.of(awarding);
+const decision = Decision.of(badges);
 const first = Award.make({ learner: 'ada', badge: 'first-lecture' });
 
 const reissues = Story.make(
 	'a restart reissues every award still pending',
 	awarding,
-	Story.given({ pending: [] }),
-	Story.send(LecturesCompleted.make({ learner: 'ada', total: 1 })),
-	Story.commands(first),
-	Story.restart(),
-	Story.commands(first),
-	Story.resolve(first, Awarded.make({ learner: 'ada', badge: 'first-lecture' })),
-	Story.model({ pending: [] })
+	story.given({ pending: [] }),
+	story.send(LecturesCompleted.make({ learner: 'ada', total: 1 })),
+	story.commands(first),
+	story.restart(),
+	story.commands(first),
+	story.resolve(first, Awarded.make({ learner: 'ada', badge: 'first-lecture' })),
+	story.model({ pending: [] })
 );
 
 const once = Decision.make(
 	'a badge is earned once',
 	badges,
-	Decision.given(badges.initial),
-	Decision.when(first),
-	Decision.accepted(BadgeEarned.make({ badge: 'first-lecture' })),
-	Decision.when(first),
-	Decision.rejected(AlreadyEarned.make({ badge: 'first-lecture' }))
+	decision.given(badges.initial),
+	decision.when(first),
+	decision.accepted(BadgeEarned.make({ badge: 'first-lecture' })),
+	decision.when(first),
+	decision.rejected(AlreadyEarned.make({ badge: 'first-lecture' }))
 );
 // #endregion tales
 

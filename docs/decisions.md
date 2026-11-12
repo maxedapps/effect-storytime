@@ -6,21 +6,24 @@ A decision tells how a Decider rules. It starts from a state, sends commands, an
 
 ## Writing a decision
 
-`Decision.make(title, decider, ...steps)` infers the types from the Decider. The examples use the membership Decider from [decider.md](decider.md).
+`Decision.of(decider)` gives the step builders, typed by the Decider, and `Decision.make(title, decider, ...steps)` builds the decision. The examples use the membership Decider from [decider.md](decider.md).
 
 <!-- snippet: test/docs/membership.test.ts#lifecycle -->
 ```ts
+// The step builders, typed by the Decider.
+const decision = Decision.of(membership);
+
 const lifecycle = Decision.make(
 	'a membership is granted once and revoked once',
 	membership,
-	Decision.given(membership.initial),
-	Decision.when(Grant.make({ source: 'teachable', at })),
-	Decision.accepted(Granted.make({ source: 'teachable', at })),
-	Decision.when(Grant.make({ source: 'teachable', at: later })),
-	Decision.rejected(AlreadyActive.make({ since: at })),
-	Decision.when(Revoke.make({})),
-	Decision.accepted(Revoked.make({})),
-	Decision.state({ source: 'teachable', active: false, checkedAt: at })
+	decision.given(membership.initial),
+	decision.when(Grant.make({ source: 'teachable', at })),
+	decision.accepted(Granted.make({ source: 'teachable', at })),
+	decision.when(Grant.make({ source: 'teachable', at: later })),
+	decision.rejected(AlreadyActive.make({ since: at })),
+	decision.when(Revoke.make({})),
+	decision.accepted(Revoked.make({})),
+	decision.state({ source: 'teachable', active: false, checkedAt: at })
 );
 ```
 
@@ -40,22 +43,22 @@ An accepted command with no events leaves the state as it was. Check what a comm
 const checks = Decision.make(
 	'a check changes only what it finds changed',
 	membership,
-	Decision.given({ source: 'teachable', active: true, checkedAt: at }),
+	decision.given({ source: 'teachable', active: true, checkedAt: at }),
 	// No change, no events: the decision is accepted with none.
-	Decision.when(Check.make({ active: true, at: later })),
-	Decision.accepted(),
-	Decision.satisfies('still active', (state) => state.active),
-	Decision.when(Check.make({ active: false, at: later })),
-	Decision.accepted(Checked.make({ active: false, at: later })),
-	Decision.state({ source: 'teachable', active: false, checkedAt: later })
+	decision.when(Check.make({ active: true, at: later })),
+	decision.accepted(),
+	decision.satisfies('still active', (state) => state.active),
+	decision.when(Check.make({ active: false, at: later })),
+	decision.accepted(Checked.make({ active: false, at: later })),
+	decision.state({ source: 'teachable', active: false, checkedAt: later })
 );
 
 const manual = Decision.make(
 	'a manual membership is never checked',
 	membership,
-	Decision.given({ source: 'manual', active: true, checkedAt: at }),
-	Decision.when(Check.make({ active: false, at: later })),
-	Decision.rejected(Manual.make({}))
+	decision.given({ source: 'manual', active: true, checkedAt: at }),
+	decision.when(Check.make({ active: false, at: later })),
+	decision.rejected(Manual.make({}))
 );
 ```
 
@@ -99,7 +102,7 @@ Use a fresh key per test when tests share a layer, or give each test its own lay
 | Export | Kind | Meaning |
 | --- | --- | --- |
 | `make(title, decider, ...steps)` | function | Builds a `Decision`. |
-| `given`, `when`, `accepted`, `rejected`, `state`, `satisfies` | functions | The steps above, each a `Decision.Step`. |
+| `of(decider)` | `Builders<State, Command, Event, Rejection>` | The step builders above (`given`, `when`, `accepted`, `rejected`, `state`, `satisfies`), each giving a `Decision.Step`. |
 | `run(decision)` | `Effect<Outcome<State>, StoryFailure>` | Checks a decision in memory. |
 | `against(decision, Store, key)` | `Effect<Outcome<State>, StoryFailure \| E, Store>` | Runs it through `handle` on a real Store. |
 | `lines(decision)` | `ReadonlyArray<string>` | The decision as lines. |

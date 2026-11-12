@@ -55,15 +55,15 @@ describe('Vitest.Reporter', () => {
 
 	it.effect('reads back only a report of a version it knows', () =>
 		Effect.gen(function* () {
-			const failure = yield* Effect.flip(StoryRecord.decode('{"version":1,"stories":[]}'));
-			expect(failure.message).toBe('Expected 2\n  at ["version"]');
+			const failure = yield* Effect.flip(StoryRecord.decode('{"version":2,"stories":[]}'));
+			expect(failure.message).toBe('Expected 3\n  at ["version"]');
 		})
 	);
 
 	it.effect('reads back only records it knows', () =>
 		Effect.gen(function* () {
 			const failure = yield* Effect.flip(
-				StoryRecord.decode('{"version":2,"stories":[{"kind":"Saga"}]}')
+				StoryRecord.decode('{"version":3,"stories":[{"kind":"Saga"}]}')
 			);
 			expect(failure.message).toContain('at ["stories"][0]["kind"]');
 		})

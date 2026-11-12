@@ -161,7 +161,7 @@ Name a cancelled command by its full value, the same one that started it, since 
 
 A restart (a new process, a deploy, a crash) loads the stored model and calls `resume(model)`. No pending command survives a restart, so `resume` must start again whatever the model says is under way. The chat's `resume` asks again from the start and clears the partial answer, because the stream restarts too.
 
-The model is the only memory: whatever `resume` needs must be in the model. A story checks this with `Story.restart()` ([stories.md](stories.md)), and an exploration restarts its paths at random ([explorations.md](explorations.md)).
+The model is the only memory: whatever `resume` needs must be in the model. A story checks this with a `restart()` step ([stories.md](stories.md)), and an exploration restarts its paths at random ([explorations.md](explorations.md)).
 
 ## Invariants
 

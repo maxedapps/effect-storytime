@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Deferred, Effect, Fiber, Option, Queue, Ref, Stream } from 'effect';
+import { Deferred, Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream } from 'effect';
 import { Loop } from 'effect-storytime';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
@@ -249,6 +249,59 @@ describe('Loop', () => {
 				)
 			);
 			expect(yield* Deferred.isDone(interrupted)).toBe(true);
+		})
+	);
+
+	// The caller's finalizer strategy must not let the commands stop before the drain ends.
+	for (const strategy of ['sequential', 'parallel'] as const)
+		it.effect(`applies the messages dispatched before its ${strategy} scope closes`, () =>
+			Effect.gen(function* () {
+				const holding = yield* Deferred.make<void>();
+				const unblock = yield* Deferred.make<void>();
+				const scope = yield* Scope.make(strategy);
+				const loop = yield* Scope.provide(
+					Loop.make(chat, {
+						init: { model: ready(2) },
+						handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave }),
+						persist: {
+							load: Effect.succeedNone,
+							save: (model) =>
+								Chat.guards.Asking(model)
+									? Effect.andThen(Deferred.succeed(holding, undefined), Deferred.await(unblock))
+									: Effect.void
+						}
+					}),
+					scope
+				);
+				const asked = yield* Effect.forkChild(
+					loop.dispatch(Asked.make({ turn: 't1', text: 'Why Effect?' }))
+				);
+				yield* Deferred.await(holding);
+				const stopped = yield* Effect.forkChild(loop.dispatch(Stopped.make({})), {
+					startImmediately: true
+				});
+				const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void), {
+					startImmediately: true
+				});
+				yield* Deferred.succeed(unblock, undefined);
+				yield* Fiber.join(closing);
+				// Its Ask started before the commands were interrupted, so the dispatch completed.
+				yield* Fiber.join(asked);
+				yield* Fiber.join(stopped);
+				expect(yield* loop.model).toEqual(ready(2));
+			})
+		);
+
+	it.effect('interrupts a dispatch made after its scope closed', () =>
+		Effect.gen(function* () {
+			const loop = yield* Effect.scoped(
+				Loop.make(chat, {
+					init: { model: ready(2) },
+					handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave })
+				})
+			);
+			const exit = yield* Effect.exit(loop.dispatch(Stopped.make({})));
+			expect(Exit.hasInterrupts(exit)).toBe(true);
 		})
 	);
 
