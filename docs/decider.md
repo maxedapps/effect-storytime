@@ -108,10 +108,10 @@ It returns a `Decider<State, Command, Event, Rejection>`: the same fields, with 
 
 1. `load(key)`, or `initial` when it gives `Option.none()`.
 2. `decide(state, command)`. A rejection fails the Effect with the rejection, and nothing is saved.
-3. `evolve` folds each event, and every invariant is checked on the state reached.
+3. `evolve` folds each event, and every invariant is checked once, on the state the last event reached. The states in between aren't checked, so a command's events may pass through a state that only its last event resolves.
 4. `save(key, state, events)`, unless there are no events.
 
-It resolves after the commit with `{ events, state }`: the events and the state they reached, or the loaded state when there were no events.
+It resolves after the commit with `{ events, state }`: the events and the state they reached, or the loaded state when there were no events. Each call runs in a tracing span named `Decider.handle`, with the Store's transaction inside it, so a tracer shows every command and what its Store did.
 
 <!-- snippet: test/docs/membership.test.ts#handle -->
 ```ts
@@ -130,7 +130,7 @@ expect(again).toBe(`active since ${at}`);
 
 ### A broken invariant
 
-A state that breaks an invariant is a bug in `decide` or `evolve`, so `handle` dies with the defect `Decider.InvariantBroken { invariant, state }` inside the transaction, and nothing is saved. `state` is the state as a line, in canonical JSON. Tales catch this before it reaches `handle` ([strict-rules.md](strict-rules.md)).
+A state that breaks an invariant is a bug in `decide` or `evolve`, so `handle` dies with the defect `Program.InvariantBroken { invariant, state }` inside the transaction, and nothing is saved. Programs and Deciders share this one defect. `state` is the state as a line, in canonical JSON. Tales catch this before it reaches `handle` ([strict-rules.md](strict-rules.md)).
 
 <!-- snippet: test/docs/membership.test.ts#invariant -->
 ```ts
@@ -145,7 +145,7 @@ const defect = yield* Decider.handle(careless, Memberships)(
 	Grant.make({ source: 'teachable', at })
 ).pipe(Effect.catchDefect(Effect.succeed));
 expect(defect).toEqual(
-	new Decider.InvariantBroken({
+	new Program.InvariantBroken({
 		invariant: 'checkedWhenActive',
 		state: '{"active":1,"checkedAt":null,"source":"teachable"}'
 	})
@@ -273,4 +273,3 @@ Test a real Store with the same decisions you run in memory: `Decision.against` 
 | `Definition<State, Command, Event, Rejection>` | interface | What `make` takes. |
 | `Store<Key, State, Event, E>` | interface | `load`, `save`, `transaction`. |
 | `Handled<State, Event>` | interface | `{ events, state }`, what `handle` resolves with. |
-| `InvariantBroken` | `Schema.TaggedError` | The defect `handle` dies with: `{ invariant, state }`, message `invariant <name> does not hold for <state>`. |

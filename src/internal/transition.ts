@@ -26,23 +26,26 @@ export interface Steps<State, Command, Event, Rejection, X> {
 }
 
 /** Decides a command and folds its events; the invariants must hold once they are all applied. */
-export const transition =
-	<State, Command, Event, Rejection, X>(steps: Steps<State, Command, Event, Rejection, X>) =>
-	(state: State, command: Command): Effect.Effect<Transition<State, Event, Rejection>, X> =>
-		Effect.gen(function* () {
-			const decided = yield* steps.decide(state, command);
-			// Stryker disable next-line ArrayDeclaration: only a tale's cases read states, and a non-state names no case
-			if (Result.isFailure(decided)) return { decided, reached: state, states: [] };
-			// Stryker disable next-line ArrayDeclaration: only a tale's cases read states, and a non-state names no case
-			const states: Array<State> = [];
-			let reached = state;
-			for (const event of decided.success) {
-				reached = yield* steps.evolve(reached, event);
-				states.push(reached);
-			}
-			yield* steps.holds(reached);
-			return { decided, reached, states };
-		});
+export const transition = <State, Command, Event, Rejection, X>(
+	steps: Steps<State, Command, Event, Rejection, X>
+) =>
+	Effect.fnUntraced(function* (
+		state: State,
+		command: Command
+	): Effect.fn.Return<Transition<State, Event, Rejection>, X> {
+		const decided = yield* steps.decide(state, command);
+		// Stryker disable next-line ArrayDeclaration: only a tale's cases read states, and a non-state names no case
+		if (Result.isFailure(decided)) return { decided, reached: state, states: [] };
+		// Stryker disable next-line ArrayDeclaration: only a tale's cases read states, and a non-state names no case
+		const states: Array<State> = [];
+		let reached = state;
+		for (const event of decided.success) {
+			reached = yield* steps.evolve(reached, event);
+			states.push(reached);
+		}
+		yield* steps.holds(reached);
+		return { decided, reached, states };
+	});
 
 /** Loads the state under `key`, or the Decider's `initial` when nothing was saved. */
 export const loadOrInitial = <State, Command, Event, Rejection, Key, E>(
@@ -59,20 +62,19 @@ export const loadOrInitial = <State, Command, Event, Rejection, Key, E>(
  * Loads, transitions and saves (only when there are events) in one transaction of `store`. `rule`
  * is the plain transition for `handle` and the strictly checked one for `Decision.against`.
  */
-export const decideIn =
-	<State, Command, Event, Rejection, Key, E, X>(
-		decider: Decider<State, Command, Event, Rejection>,
-		store: Store<Key, State, Event, E>,
-		rule: (state: State, command: Command) => Effect.Effect<Transition<State, Event, Rejection>, X>
-	) =>
-	(key: Key, command: Command): Effect.Effect<Transition<State, Event, Rejection>, E | X> =>
-		store.transaction(
-			Effect.gen(function* () {
-				const ruled = yield* rule(yield* loadOrInitial(decider, store, key), command);
-				const { decided, reached } = ruled;
-				if (Result.isSuccess(decided) && decided.success.length > 0) {
-					yield* store.save(key, reached, decided.success);
-				}
-				return ruled;
-			})
-		);
+export const decideIn = <State, Command, Event, Rejection, Key, E, X>(
+	decider: Decider<State, Command, Event, Rejection>,
+	store: Store<Key, State, Event, E>,
+	rule: (state: State, command: Command) => Effect.Effect<Transition<State, Event, Rejection>, X>
+) =>
+	Effect.fnUntraced(function* (
+		key: Key,
+		command: Command
+	): Effect.fn.Return<Transition<State, Event, Rejection>, E | X> {
+		const ruled = yield* rule(yield* loadOrInitial(decider, store, key), command);
+		const { decided, reached } = ruled;
+		if (Result.isSuccess(decided) && decided.success.length > 0) {
+			yield* store.save(key, reached, decided.success);
+		}
+		return ruled;
+	}, store.transaction);

@@ -1,13 +1,15 @@
 // The membership Decider as docs/decider.md, docs/decisions.md and docs/explorations.md show it.
 import { describe, expect, layer } from '@effect/vitest';
-import { Effect, Option } from 'effect';
-import { Decider } from 'effect-storytime';
-import { Decision, Exploration, Vitest } from 'effect-storytime/testing';
+import { Effect, Option, Result } from 'effect';
+import { Decider, Program } from 'effect-storytime';
+import { Decision, Exploration } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import {
 	AlreadyActive,
 	at,
 	Check,
 	Checked,
+	Command,
 	Event,
 	Grant,
 	Granted,
@@ -62,7 +64,13 @@ const manual = Decision.make(
 
 // #region explore
 // The Decider's `initial` and any command the Command Schema allows, by default.
-const holds = Exploration.decisions('any commands keep a membership valid', membership);
+const holds = Exploration.decisions('any commands keep a membership valid', membership, {
+	// Named assertions on every command a path decides: an accepted revoke ends the membership.
+	properties: {
+		revokeEnds: ({ command, decided, after }) =>
+			!Command.guards.Revoke(command) || Result.isFailure(decided) || !after.active
+	}
+});
 // #endregion explore
 
 // #region vitest
@@ -113,7 +121,7 @@ layer(Memberships.layer)('Decider.handle', (it) => {
 				Grant.make({ source: 'teachable', at })
 			).pipe(Effect.catchDefect(Effect.succeed));
 			expect(defect).toEqual(
-				new Decider.InvariantBroken({
+				new Program.InvariantBroken({
 					invariant: 'checkedWhenActive',
 					state: '{"active":1,"checkedAt":null,"source":"teachable"}'
 				})

@@ -23,6 +23,39 @@
 			}
 		},
 		{
+			"kind": "Story",
+			"title": "two switches leave the lamp off, in either order",
+			"file": "checks/lamp.stories.ts",
+			"test": "two switches leave the lamp off, in either order",
+			"lines": [
+				"given {\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}",
+				"any order",
+				"  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":1}",
+				"  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":2}",
+				"satisfies off"
+			],
+			"status": "passed",
+			"finals": [
+				{
+					"order": [
+						3,
+						4
+					],
+					"final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}"
+				},
+				{
+					"order": [
+						4,
+						3
+					],
+					"final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}"
+				}
+			],
+			"cases": [
+				"Message.Switched"
+			]
+		},
+		{
 			"kind": "Decision",
 			"title": "only an active membership is revoked",
 			"file": "checks/membership.stories.ts",
@@ -111,7 +144,12 @@
 				"send Stopped"
 			],
 			"status": "passed",
-			"final": "Ready {\"left\":1,\"turns\":[]}",
+			"finals": [
+				{
+					"order": [],
+					"final": "Ready {\"left\":1,\"turns\":[]}"
+				}
+			],
 			"cases": [
 				"Command.Ask",
 				"Message.Asked",

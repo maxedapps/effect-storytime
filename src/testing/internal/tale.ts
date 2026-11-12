@@ -4,13 +4,18 @@
  */
 import type { Effect } from 'effect';
 import type { StoryFailure } from '../Story.ts';
+import type { Final } from '../StoryRecord.ts';
 
 // Stryker disable next-line StringLiteral: the key only has to be one no other method uses
 export const TypeId = '~effect-storytime/Tale';
 
-/** What a passing tale reached: its final model or state as a line, and the cases it touched. */
+/**
+ * What a passing tale reached: a decision's final state or a story's final model per order, as
+ * lines, and the cases it touched.
+ */
 export interface Reached {
 	readonly final?: string;
+	readonly finals?: ReadonlyArray<Final>;
 	readonly cases: ReadonlyArray<string>;
 }
 

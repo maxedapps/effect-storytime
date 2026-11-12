@@ -4,9 +4,10 @@
  * which states may exist. `handle` runs it on a Store in one transaction, which makes it an
  * aggregate.
  */
-import { Array as Arr, Effect, Option, Schema } from 'effect';
-import type { Context, Result } from 'effect';
+import { Effect } from 'effect';
+import type { Context, Option, Result, Schema } from 'effect';
 import { describer } from './internal/canonical.ts';
+import { enforce } from './internal/invariants.ts';
 import { decideIn, transition } from './internal/transition.ts';
 import type { Invariants } from './Program.ts';
 
@@ -36,7 +37,7 @@ export interface Definition<State, Command, Event, Rejection> {
 		command: Command
 	) => Result.Result<ReadonlyArray<Event>, Rejection>;
 	readonly evolve: (state: State, event: Event) => State;
-	/** Named predicates every state must satisfy, checked by `handle` before it saves. */
+	/** Named predicates every state must satisfy, checked by `handle` on the state each command reaches, before it saves. */
 	readonly invariants?: Invariants<State>;
 }
 
@@ -70,48 +71,25 @@ export interface Handled<State, Event> {
 }
 
 /**
- * The defect `handle` dies with when a command's events reach a state that breaks an invariant.
- * It dies inside the transaction, so nothing is saved.
- */
-export class InvariantBroken extends Schema.TaggedError<InvariantBroken>()('InvariantBroken', {
-	invariant: Schema.String,
-	/** The state as a line, as stories show it. */
-	state: Schema.String
-}) {
-	override get message() {
-		return `invariant ${this.invariant} does not hold for ${this.state}`;
-	}
-}
-
-/**
  * Handles commands for keys of a Store service: loads the state (or `initial`), decides, folds the
- * events, checks the invariants and saves, in one transaction. Resolves after the commit with the
- * events and the state they reached; a rejection fails the Effect.
+ * events, checks the invariants on the state they reach and saves, in one transaction, traced as
+ * the span `Decider.handle`. Resolves after the commit with the events and the state they reached;
+ * a rejection fails the Effect and a broken invariant dies with `Program.InvariantBroken`.
  */
 export const handle = <State, Command, Event, Rejection, Id, Key, E>(
 	decider: Decider<State, Command, Event, Rejection>,
 	Store: Context.Key<Id, Store<Key, State, Event, E>>
 ) => {
-	const show = describer(decider.State);
 	const rule = transition<State, Command, Event, Rejection, never>({
 		decide: (state, command) => Effect.sync(() => decider.decide(state, command)),
 		evolve: (state, event) => Effect.sync(() => decider.evolve(state, event)),
-		holds: (state) =>
-			Effect.suspend(() =>
-				Option.match(
-					Arr.findFirst(Object.entries(decider.invariants), ([, holds]) => !holds(state)),
-					{
-						onNone: () => Effect.void,
-						onSome: ([invariant]) =>
-							Effect.die(new InvariantBroken({ invariant, state: show(state) }))
-					}
-				)
-			)
+		holds: enforce(decider.invariants, describer(decider.State))
 	});
-	return (key: Key, command: Command): Effect.Effect<Handled<State, Event>, Rejection | E, Id> =>
-		Effect.flatMap(Store, (store) =>
-			Effect.flatMap(decideIn(decider, store, rule)(key, command), ({ decided, reached }) =>
-				Effect.map(Effect.fromResult(decided), (events) => ({ events, state: reached }))
-			)
-		);
+	return Effect.fn('Decider.handle')(function* (
+		key: Key,
+		command: Command
+	): Effect.fn.Return<Handled<State, Event>, Rejection | E, Id> {
+		const { decided, reached } = yield* decideIn(decider, yield* Store, rule)(key, command);
+		return { events: yield* Effect.fromResult(decided), state: reached };
+	});
 };

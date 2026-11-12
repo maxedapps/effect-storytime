@@ -2,7 +2,7 @@
 
 `import { Exploration } from 'effect-storytime/testing'`
 
-An exploration generates tales. It checks many random paths through a Program or a Decider with `effect/Arbitrary`, using every strict rule a story or decision runs ([strict-rules.md](strict-rules.md)). The one rule it skips is command assertions: a path asserts no effects, so it owes none. A failing path shrinks to a short story or decision, its counterexample. Write stories and decisions for the behaviour you mean, and an exploration for the rules that must hold whatever happens: Schemas, purity, JSON copies and invariants.
+An exploration generates tales. It checks many random paths through a Program or a Decider with `effect/Arbitrary`, using every strict rule a story or decision runs ([strict-rules.md](strict-rules.md)). The one rule it skips is command assertions: a path asserts no effects, so it owes none. A failing path shrinks to a short story or decision, its counterexample. Write stories and decisions for the behaviour you mean, and an exploration for the rules that must hold whatever happens: Schemas, purity, JSON copies, invariants and the exploration's own properties.
 
 ## Exploring a Program
 
@@ -29,7 +29,12 @@ const talks = Exploration.make('any conversation keeps the chat valid', chat, {
 	emits: Command.match({
 		Ask: ({ turn: asking }) => [Delta.make({ turn: asking, text: 'more' })],
 		SaveTurn: () => []
-	})
+	}),
+	// Named assertions on every update a path runs: a stop cancels the pending ask, and only it.
+	properties: {
+		stopCancelsTheAsk: ({ before, message, cancels }) =>
+			!Message.guards.Stopped(message) || cancels.length === (Chat.guards.Asking(before) ? 1 : 0)
+	}
 });
 ```
 
@@ -40,6 +45,7 @@ const talks = Exploration.make('any conversation keeps the chat valid', chat, {
 | `replies` | `(command) => ReadonlyArray<Message>` | none | The messages a pending command may complete with. A command with none stays pending. |
 | `emits` | `(command) => ReadonlyArray<Message>` | none | The messages a pending command may stream while it stays pending. |
 | `restarts` | `boolean` | `true` | Whether paths restart. |
+| `properties` | `Exploration.Properties<Exploration.Update<Model, Message, Command>>` | none | Named assertions on every `update` a path runs ([Properties](#properties)). |
 | `runs` | `number` | `100` | How many paths to check. |
 | `steps` | `number` | `30` | The most actions a path takes. |
 | `seed` | `string \| number` | the title | The seed paths come from, so every run checks the same paths. |
@@ -55,16 +61,38 @@ The default `send` is derived when the exploration is made. A Message Schema tha
 <!-- snippet: test/docs/membership.test.ts#explore -->
 ```ts
 // The Decider's `initial` and any command the Command Schema allows, by default.
-const holds = Exploration.decisions('any commands keep a membership valid', membership);
+const holds = Exploration.decisions('any commands keep a membership valid', membership, {
+	// Named assertions on every command a path decides: an accepted revoke ends the membership.
+	properties: {
+		revokeEnds: ({ command, decided, after }) =>
+			!Command.guards.Revoke(command) || Result.isFailure(decided) || !after.active
+	}
+});
 ```
 
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `given` | `Arbitrary<State>` | `Arbitrary.Constant(decider.initial)` | The states a path starts from. |
 | `when` | `Arbitrary<Command>` | `Arbitrary.schema(decider.Command)` | The commands a path decides. |
+| `properties` | `Exploration.Properties<Exploration.Ruling<State, Command, Event, Rejection>>` | none | Named assertions on every command a path decides ([Properties](#properties)). |
 | `runs`, `steps`, `seed` | | as above | |
 
 Decider paths never restart.
+
+## Properties
+
+An invariant judges one model or state. A property judges a whole step: what held before, what ran and what it gave. `properties` names predicates that must return `true` for every step of every path, checked after that step's strict rules. A failing or throwing property fails the step like any rule, so its path shrinks and gets a replay token. The problem is `property <name> does not hold`, with the step as canonical JSON in `actual`, or `property <name> threw: …`.
+
+| Subject | A property takes | Fields |
+| --- | --- | --- |
+| Program | `Exploration.Update<Model, Message, Command>` | `before` (the model `update` got), `message`, `after` (the model it gave), `commands`, `cancels` |
+| Decider | `Exploration.Ruling<State, Command, Event, Rejection>` | `before` (the state decided on), `command`, `decided` (`Result` of the events or the rejection), `after` (the state the events reached, or `before` on a rejection) |
+
+A Program's properties see every `update`: sent messages, replies and stream messages. A restart's `resume` gives no `Update`, since no message ran. Properties are pure predicates, like invariants.
+
+The chat's exploration above checks that a stop cancels the pending ask and nothing else, and the membership's checks that an accepted revoke ends the membership.
+
+Stories have no properties: a story asserts each step it means with `model`, `satisfies` and `commands`.
 
 ## Running and failures
 

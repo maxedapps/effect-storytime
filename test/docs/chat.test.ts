@@ -1,7 +1,8 @@
 // The chat's tales as docs/stories.md, docs/explorations.md and docs/vitest.md show them.
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Schema } from 'effect';
-import { Exploration, Story, Tale, Vitest } from 'effect-storytime/testing';
+import { Exploration, Story, Tale } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { Chat, chat, Command, Message, ready } from '../examples/chat.ts';
 
 const { Asked, Delta, Answered, Refused, Stopped } = Message.cases;
@@ -108,7 +109,12 @@ const talks = Exploration.make('any conversation keeps the chat valid', chat, {
 	emits: Command.match({
 		Ask: ({ turn: asking }) => [Delta.make({ turn: asking, text: 'more' })],
 		SaveTurn: () => []
-	})
+	}),
+	// Named assertions on every update a path runs: a stop cancels the pending ask, and only it.
+	properties: {
+		stopCancelsTheAsk: ({ before, message, cancels }) =>
+			!Message.guards.Stopped(message) || cancels.length === (Chat.guards.Asking(before) ? 1 : 0)
+	}
 });
 // #endregion explore
 
@@ -153,9 +159,11 @@ describe('chat tales', () => {
 	it.effect('give their outcome', () =>
 		Effect.gen(function* () {
 			// #region outcome
-			const { model, final, cases } = yield* Story.run(limited);
-			expect(model).toEqual(Limited.make({ turns: [] }));
-			expect(final).toBe('Limited {"turns":[]}');
+			const { finals, cases } = yield* Story.run(limited);
+			// One final per order; a story without anyOrder has one, with an empty order.
+			expect(finals).toEqual([
+				{ order: [], model: Limited.make({ turns: [] }), final: 'Limited {"turns":[]}' }
+			]);
 			expect(cases).toEqual([
 				'Command.Ask',
 				'Message.Asked',
@@ -163,6 +171,12 @@ describe('chat tales', () => {
 				'Model.Asking',
 				'Model.Limited',
 				'Model.Ready'
+			]);
+			// With an anyOrder, one final per order, named by the line numbers of its steps as they ran.
+			const { finals: orders } = yield* Story.run(stops);
+			expect(orders.map(({ order, final }) => [order, final])).toEqual([
+				[[5, 6], 'Ready {"left":2,"turns":[]}'],
+				[[6, 5], 'Ready {"left":2,"turns":[]}']
 			]);
 			// #endregion outcome
 		})

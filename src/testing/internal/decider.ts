@@ -4,16 +4,23 @@
  * `evolve` run twice each on copies, validating what they give and continuing from copies of it, so
  * no callback holds a value the tale names.
  */
-import { Effect, Option, Result } from 'effect';
-import type { Schema } from 'effect';
+import { Effect, Option, Result, Schema } from 'effect';
 import type { Decider } from '../../Decider.ts';
-import { tagger } from '../../internal/canonical.ts';
+import { describer, tagger } from '../../internal/canonical.ts';
 import { holds, pure, role } from './check.ts';
 import type { Problem } from './check.ts';
 import { transition } from '../../internal/transition.ts';
 import type { Transition } from '../../internal/transition.ts';
 
 export type Decided<Event, Rejection> = Result.Result<ReadonlyArray<Event>, Rejection>;
+
+/** One command a step decided: the state before, the command, what `decide` gave and the state reached. */
+export interface Ruling<State, Command, Event, Rejection> {
+	readonly before: State;
+	readonly command: Command;
+	readonly decided: Decided<Event, Rejection>;
+	readonly after: State;
+}
 
 /** The checks on a Decider's Schemas. */
 export const checks = <State, Command, Event, Rejection>(
@@ -56,18 +63,33 @@ export const caser = <State, Command, Event, Rejection>(
 	};
 };
 
+/** The strict rules of `decider`; explored paths check their `properties` on every ruling too. */
 export const strict = <State, Command, Event, Rejection>(
-	decider: Decider<State, Command, Event, Rejection>
+	decider: Decider<State, Command, Event, Rejection>,
+	properties: Readonly<
+		Record<string, (ruling: Ruling<State, Command, Event, Rejection>) => boolean>
+	> = {}
 ) => {
 	const the = checks(decider);
-	const invariants = holds(decider.invariants, the.state.show);
-	const check = (current: State) =>
-		Effect.gen(function* () {
-			yield* the.state.valid(current);
-			const copy = yield* the.state.copy(current);
-			yield* invariants(copy);
-			return copy;
-		});
+	const invariants = holds('invariant', decider.invariants, the.state.show);
+	const rulings = holds(
+		'property',
+		properties,
+		describer(
+			Schema.Struct({
+				before: decider.State,
+				command: decider.Command,
+				decided: Schema.Result(Schema.Array(decider.Event), decider.Rejection),
+				after: decider.State
+			})
+		)
+	);
+	const check = Effect.fnUntraced(function* (current: State) {
+		yield* the.state.valid(current);
+		const copy = yield* the.state.copy(current);
+		yield* invariants(copy);
+		return copy;
+	});
 
 	const output = (decided: Decided<Event, Rejection>) =>
 		Result.match(decided, {
@@ -115,15 +137,22 @@ export const strict = <State, Command, Event, Rejection>(
 		holds: invariants
 	});
 
-	/** Validates the command and runs the checked transition on a copy of it. */
-	const rule = (
+	/** Validates the command, runs the checked transition on a copy of it and checks the ruling. */
+	const rule = Effect.fnUntraced(function* (
 		current: State,
 		command: Command
-	): Effect.Effect<Transition<State, Event, Rejection>, Problem> =>
-		Effect.andThen(
-			the.command.valid(command),
-			Effect.flatMap(the.command.copy(command), (copy) => checked(current, copy))
-		);
+	): Effect.fn.Return<Transition<State, Event, Rejection>, Problem> {
+		yield* the.command.valid(command);
+		const copy = yield* the.command.copy(command);
+		const ruled = yield* checked(current, copy);
+		yield* rulings({
+			before: current,
+			command: copy,
+			decided: ruled.decided,
+			after: ruled.reached
+		});
+		return ruled;
+	});
 
 	return { check, rule };
 };

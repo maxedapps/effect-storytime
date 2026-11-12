@@ -58,10 +58,14 @@ describe('Story', () => {
 	it.effect('runs a story and returns its final model and the cases it touched', () =>
 		Effect.gen(function* () {
 			const outcome = yield* Story.run(answers);
-			expect(outcome.model).toEqual(Chat.cases.Ready.make({ turns: [turn], left: 1 }));
-			expect(outcome.final).toBe(
-				'Ready {"left":1,"turns":[{"answer":"Typed errors.","id":"t1","question":"Why Effect?"}]}'
-			);
+			expect(outcome.finals).toEqual([
+				{
+					order: [],
+					model: Chat.cases.Ready.make({ turns: [turn], left: 1 }),
+					final:
+						'Ready {"left":1,"turns":[{"answer":"Typed errors.","id":"t1","question":"Why Effect?"}]}'
+				}
+			]);
 			expect(outcome.cases).toEqual([
 				'Command.Ask',
 				'Command.SaveTurn',
@@ -608,7 +612,7 @@ describe('Story', () => {
 	it.effect('starts from a given inside a leading group', () =>
 		Effect.gen(function* () {
 			const story = Story.make('grouped', chat, steps(given(ready(1)), model(ready(1))));
-			expect((yield* Story.run(story)).model).toEqual(ready(1));
+			expect((yield* Story.run(story)).finals[0].model).toEqual(ready(1));
 		})
 	);
 
@@ -674,7 +678,7 @@ describe('Story', () => {
 					),
 					conversation.model(Conversation.Phase.cases.Done.make({ turn: 't1', output: 'ab' }))
 				);
-				expect((yield* Story.run(story)).model).toEqual(
+				expect((yield* Story.run(story)).finals[0].model).toEqual(
 					Conversation.Phase.cases.Done.make({ turn: 't1', output: 'ab' })
 				);
 			})
@@ -708,7 +712,7 @@ describe('Story', () => {
 					lamp.restart(),
 					lamp.model(Lamp.off)
 				);
-				expect((yield* Story.run(story)).model).toEqual(Lamp.off);
+				expect((yield* Story.run(story)).finals[0].model).toEqual(Lamp.off);
 			})
 		);
 	});
@@ -851,6 +855,80 @@ describe('Story', () => {
 				expect(yield* failure(story)).toMatchObject({
 					step: 6,
 					problem: 'in order 5, 6: RunStep {"step":0,"turn":"t1"} is not pending'
+				});
+			})
+		);
+
+		// A switch by 0 resets the count, so the order decides where a story ends.
+		const resetter = Lamp.variant((current, { at, by }) => ({
+			model: { on: current.on, at, count: by === 0 ? 0 : current.count + by }
+		}));
+		const resetting = Story.of(resetter);
+		const at = new Date('2026-11-04T00:00:00.000Z');
+
+		it.effect('gives the final model of every order, also when orders end apart', () =>
+			Effect.gen(function* () {
+				const story = Story.make(
+					'a reset and a switch',
+					resetter,
+					resetting.given(Lamp.off),
+					resetting.anyOrder(resetting.send(Lamp.switched(1)), resetting.send(Lamp.switched(0)))
+				);
+				expect(yield* Story.run(story)).toEqual({
+					finals: [
+						{
+							order: [3, 4],
+							model: { on: false, at, count: 0 },
+							final: '{"at":"2026-11-04T00:00:00.000Z","count":0,"on":0}'
+						},
+						{
+							order: [4, 3],
+							model: { on: false, at, count: 1 },
+							final: '{"at":"2026-11-04T00:00:00.000Z","count":1,"on":0}'
+						}
+					],
+					cases: ['Message.Switched']
+				});
+			})
+		);
+
+		it.effect('orders a nested anyOrder after the one around it', () =>
+			Effect.gen(function* () {
+				const story = Story.make(
+					'switches in any order',
+					resetter,
+					resetting.given(Lamp.off),
+					resetting.anyOrder(
+						resetting.send(Lamp.switched(1)),
+						resetting.anyOrder(resetting.send(Lamp.switched(2)), resetting.send(Lamp.switched(3)))
+					),
+					resetting.satisfies('counted', (current) => current.count === 6)
+				);
+				const { finals } = yield* Story.run(story);
+				expect(finals.map(({ order }) => order)).toEqual([
+					[3, 4, 5, 6],
+					[3, 4, 6, 5],
+					[4, 3, 5, 6],
+					[4, 3, 6, 5]
+				]);
+			})
+		);
+
+		it.effect('names a nested order after the one around it when it fails', () =>
+			Effect.gen(function* () {
+				const story = Story.make(
+					'a reset among switches',
+					resetter,
+					resetting.given(Lamp.off),
+					resetting.anyOrder(
+						resetting.send(Lamp.switched(1)),
+						resetting.anyOrder(resetting.send(Lamp.switched(0)), resetting.send(Lamp.switched(3)))
+					),
+					resetting.satisfies('counted', (current) => current.count > 0)
+				);
+				expect(yield* failure(story)).toMatchObject({
+					step: 7,
+					problem: 'in order 3, 4, 6, 5: the model does not satisfy counted'
 				});
 			})
 		);

@@ -1,6 +1,7 @@
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { Decision, Vitest } from 'effect-storytime/testing';
+import { Decision } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { membership, none, NotActive, Revoke } from '../../../examples/membership.ts';
 
 const decision = Decision.of(membership);

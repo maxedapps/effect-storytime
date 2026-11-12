@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { createVitest } from 'vitest/node';
-import { StoryRecord, Vitest } from 'effect-storytime/testing';
+import { StoryRecord } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 
 const root = fileURLToPath(new URL('fixtures/report', import.meta.url));
 

@@ -183,7 +183,7 @@ export default defineConfig({
 	},
 	overrides: [
 		{
-			// The domain entry must load without the testing side (ADR 0003).
+			// The domain entry must load without the testing side (ADRs 0003, 0005).
 			files: ['src/*.ts', 'src/internal/**'],
 			rules: {
 				'no-restricted-imports': [
@@ -191,8 +191,25 @@ export default defineConfig({
 					{
 						patterns: [
 							{
-								group: ['**/testing', '**/testing/**'],
-								message: 'The domain imports nothing from testing.'
+								group: ['**/testing', '**/testing/**', '**/vitest', '**/vitest/**'],
+								message: 'The domain imports nothing from testing or vitest.'
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			// The testing entry runs anywhere Effect does: no test runner, no Node (ADR 0005).
+			files: ['src/testing/**'],
+			rules: {
+				'no-restricted-imports': [
+					'error',
+					{
+						patterns: [
+							{
+								group: ['vitest', 'vitest/**', '@effect/vitest', '**/vitest/**', 'node:*'],
+								message: 'The testing entry loads no test runner and no Node module.'
 							}
 						]
 					}

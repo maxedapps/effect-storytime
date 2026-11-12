@@ -36,6 +36,7 @@
 ## Runtime
 
 - **`handle` inside another transaction.** A nested transaction keeps the outer isolation and commits only with it, so `handle` resolves before its changes are durable. Call `handle` outside any transaction.
-- **An invariant breaks in production.** `handle` dies with `Decider.InvariantBroken` and saves nothing. It's a defect: fix `decide` or `evolve`, and add a decision that reproduces it.
-- **The Loop checks nothing.** It runs `update` as it is, without Schema, purity or invariant checks. Those happen only in tales, so test every Program with stories and an exploration.
+- **An invariant breaks in production.** `handle` or a Loop dies with `Program.InvariantBroken` and saves nothing. It's a defect: fix `decide`, `evolve` or `update`, and add a decision or story that reproduces it.
+- **The Loop checks only invariants.** It runs `update` as it is, without Schema, purity or JSON checks. Those happen only in tales, so test every Program with stories and an exploration.
+- **A command dies and nothing notices.** A Loop keeps running when a command fiber dies. Fork or race `loop.join` to see it.
 - **`dispatch` doesn't wait for commands.** It completes once the model is updated. Wait for a model on `changes` to see a command's effect.

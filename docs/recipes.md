@@ -176,7 +176,7 @@ Write the Store as a `Context.Service` with a layer on your database ([decider.m
 
 ## Laying out a domain in an app
 
-One way that keeps the two entries apart:
+One way that keeps the entries apart:
 
 ```text
 src/domain/membership.ts          Schemas, decide, evolve, the Decider (imports effect-storytime)
@@ -188,4 +188,4 @@ test/server/memberships.test.ts   the same decisions through Decision.against
 vitest.config.ts                  Vitest.Reporter
 ```
 
-Only test files import `effect-storytime/testing`.
+Only test files import `effect-storytime/testing` and `effect-storytime/vitest`, and only `vitest.config.ts` imports the reporter.

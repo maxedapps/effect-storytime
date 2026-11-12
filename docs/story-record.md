@@ -16,29 +16,34 @@ A report is `{ "version": 3, "stories": [...] }`, one record per told tale. The 
 | `test` | string | The test's full name, its suites joined by ` > `. |
 | `lines` | string[] | The tale's lines ([stories.md](stories.md#lines)). An exploration has one line naming its runs, steps and seed. |
 | `status` | `"passed" \| "failed"` | |
-| `final` | string, optional | The final model or state as a line, once a story or decision passed. |
+| `finals` | object[], optional | Where a passing story ended: one `{ order, final }` per order its `anyOrder`s ran in, in the order they ran. `order` holds the line numbers of the `anyOrder` steps as that order ran them, empty without an `anyOrder`, and `final` is the final model as a line. |
+| `final` | string, optional | The final state as a line, once a decision passed. |
 | `cases` | string[], optional | The cases a passing tale touched, sorted, such as `Message.Asked` or `Rejection.NotActive`. |
 | `failure` | object, optional | Present when the tale failed with a `StoryFailure`. |
 
 `failure` holds the `StoryFailure` without its title: `step`, `line`, `problem`, and optionally `expected`, `actual`, and for an exploration `counterexample` and `replay` ([explorations.md](explorations.md#running-and-failures)). A tale that failed with another error, such as a database error in `Decision.against`, has only `status: "failed"`.
 
-A passing story, from [`test/fixtures/report.json`](../test/fixtures/report.json):
+A passing story with an `anyOrder`, from [`test/fixtures/report.json`](../test/fixtures/report.json). Its two orders end alike; a story whose orders end apart passes too, unless a step after the `anyOrder` asserts the model, and its `finals` show each ending:
 
 ```json
 {
   "kind": "Story",
-  "title": "a question is stopped",
-  "file": "stories/chat.stories.ts",
-  "test": "chat > a question is stopped",
+  "title": "two switches leave the lamp off, in either order",
+  "file": "checks/lamp.stories.ts",
+  "test": "two switches leave the lamp off, in either order",
   "lines": [
-    "given Ready {\"left\":1,\"turns\":[]}",
-    "send Asked {\"text\":\"Why?\",\"turn\":\"t1\"}",
-    "commands Ask {\"text\":\"Why?\",\"turn\":\"t1\"}",
-    "send Stopped"
+    "given {\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}",
+    "any order",
+    "  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":1}",
+    "  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":2}",
+    "satisfies off"
   ],
   "status": "passed",
-  "final": "Ready {\"left\":1,\"turns\":[]}",
-  "cases": ["Command.Ask", "Message.Asked", "Message.Stopped", "Model.Asking", "Model.Ready"]
+  "finals": [
+    { "order": [3, 4], "final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}" },
+    { "order": [4, 3], "final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}" }
+  ],
+  "cases": ["Message.Switched"]
 }
 ```
 

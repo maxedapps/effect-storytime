@@ -5,17 +5,19 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, posix, resolve } from 'node:path';
 import { it } from '@effect/vitest';
-import { Array as Arr, Cause, Effect, Exit, Option, Order, Schema } from 'effect';
+import { Array as Arr, Cause, Effect, Exit, Option, Order, Schema, Struct } from 'effect';
 import type { TestContext } from 'vitest';
 import type { Reporter as VitestReporter, TestModule, Vitest } from 'vitest/node';
 import type { Decider } from '../Decider.ts';
 import type { Program, Tagged } from '../Program.ts';
-import * as Story from './Story.ts';
-import type { StoryRecord, StoryReport } from './StoryRecord.ts';
-import * as Tale from './Tale.ts';
+import * as Story from '../testing/Story.ts';
+import { StoryRecord, type StoryReport } from '../testing/StoryRecord.ts';
+import * as Tale from '../testing/Tale.ts';
 
 /** A tale's record before the reporter adds the file and test that told it. */
-export type Told = Omit<StoryRecord, 'file' | 'test'>;
+const Told = Schema.Struct(Struct.omit(StoryRecord.fields, ['file', 'test']));
+
+export type Told = typeof Told.Type;
 
 declare module 'vitest' {
 	interface TaskMeta {
@@ -25,35 +27,22 @@ declare module 'vitest' {
 
 const isStoryFailure = Schema.is(Story.StoryFailure);
 
-const told = (tale: Tale.Tale, exit: Exit.Exit<Tale.Reached, unknown>): Told => ({
-	kind: tale._tag,
-	title: tale.title,
-	lines: Tale.lines(tale),
-	...Exit.match(exit, {
-		onSuccess: ({ final, cases }): Pick<Told, 'status' | 'final' | 'cases'> => ({
-			status: 'passed',
-			final,
-			cases
-		}),
-		onFailure: (cause): Pick<Told, 'status' | 'failure'> => ({
-			status: 'failed',
-			failure: Option.getOrUndefined(
-				Option.map(
-					Option.filter(Cause.findErrorOption(cause), isStoryFailure),
-					({ step, line, problem, expected, actual, counterexample, replay }) => ({
-						step,
-						line,
-						problem,
-						expected,
-						actual,
-						counterexample,
-						replay
-					})
-				)
-			)
+/** Keeps exactly the record's fields, whatever else the run's values carry (a story's models). */
+const encodeTold = Schema.encodeSync(Told);
+
+const told = (tale: Tale.Tale, exit: Exit.Exit<Tale.Reached, unknown>): Told =>
+	encodeTold({
+		kind: tale._tag,
+		title: tale.title,
+		lines: Tale.lines(tale),
+		...Exit.match(exit, {
+			onSuccess: (reached) => ({ status: 'passed' as const, ...reached }),
+			onFailure: (cause) => ({
+				status: 'failed' as const,
+				failure: Option.getOrUndefined(Option.filter(Cause.findErrorOption(cause), isStoryFailure))
+			})
 		})
-	})
-});
+	});
 
 /**
  * Runs a tale, or `run` when it needs services (such as `Decision.against` inside `layer(...)`),
@@ -127,6 +116,7 @@ export class Reporter implements VitestReporter {
 					lines: tale.lines,
 					status: tale.status,
 					final: tale.final,
+					finals: tale.finals,
 					failure: tale.failure,
 					cases: tale.cases
 				}))

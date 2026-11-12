@@ -1,6 +1,6 @@
 # 0003 A lean domain library: Decider as the command side, testing as its own entry
 
-Status: Accepted
+Status: Accepted; decision 7's single testing entry is superseded by [0005](0005-honest-contracts.md), which moves `Vitest` to `effect-storytime/vitest`.
 
 ## Context
 

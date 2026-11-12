@@ -2,8 +2,8 @@
 
 effect-storytime is two libraries for Effect 4 in one package:
 
-- **A domain-driven design library** (`effect-storytime`). You write a domain as pure state machines whose inputs, outputs and side effects are Schema data. A **Decider** holds the rules of one consistency boundary: `decide(state, command)` gives events or a rejection, `evolve` folds them into the state, and named invariants say which states may exist. `Decider.handle` runs it on your **Store** in one transaction, which makes it an aggregate. A **Program** holds a process or UI state: `update(model, message)` gives the next model and the commands to start or cancel, and a **Loop** runs it with Effect, persisting the model across restarts.
-- **A story-based testing library** (`effect-storytime/testing`). You tell tales about the domain: **stories** about Programs, **decisions** about Deciders and **explorations** that generate random paths through either and shrink a failing one to a short counterexample. Every tale runs strict rules at every step (Schema validity, purity, JSON round trips, invariants, and an assertion for every command), **covers** requires a subject's tales to touch every case it has, and a **Vitest** adapter runs tales as tests and writes a deterministic JSON record of every tale told.
+- **A domain-driven design library** (`effect-storytime`). You write a domain as pure state machines whose inputs, outputs and side effects are Schema data. A **Decider** holds the rules of one consistency boundary: `decide(state, command)` gives events or a rejection, `evolve` folds them into the state, and named invariants say which states may exist. `Decider.handle` runs it on your **Store** in one transaction, which makes it an aggregate. A **Program** holds a process or UI state: `update(model, message)` gives the next model and the commands to start or cancel, and a **Loop** runs it with Effect, persisting the model across restarts. `handle` and a Loop both refuse a state or model that breaks an invariant before they save it.
+- **A story-based testing library** (`effect-storytime/testing`). You tell tales about the domain: **stories** about Programs, **decisions** about Deciders and **explorations** that generate random paths through either, check named properties on every step and shrink a failing one to a short counterexample. Every tale runs strict rules at every step (Schema validity, purity, JSON round trips, invariants, and an assertion for every command), and **covers** requires a subject's tales to touch every case it has. A **Vitest** adapter (`effect-storytime/vitest`) runs tales as tests and writes a deterministic JSON record of every tale told.
 
 The documentation is written for coding agents that use the library in their own projects. Start with [docs/README.md](docs/README.md).
 
@@ -14,10 +14,10 @@ Install it from its git tag, which carries the built `dist/`, so installing runs
 ```yaml
 # pnpm-workspace.yaml
 catalog:
-  effect-storytime: github:maxedapps/effect-storytime#v0.3.0
+  effect-storytime: github:maxedapps/effect-storytime#v0.4.0
 ```
 
-`effect` (4.1.2 or newer) is the one required peer. Where you test, add `vitest` (5.1) and `@effect/vitest` (4.1.2), which only the testing entry loads. The domain entry imports nothing from `testing`, so production code loads none of it.
+`effect` (4.1.2 or newer) is the one required peer. Where you test with Vitest, add `vitest` (5.1) and `@effect/vitest` (4.1.2), which only the `effect-storytime/vitest` entry loads. The domain entry imports nothing from the testing entries, so production code loads none of it, and `effect-storytime/testing` loads neither Vitest nor Node's `fs`.
 
 ## Quick start: the domain
 
@@ -121,7 +121,8 @@ The tests for that domain: a decision about the Decider, a story about the Progr
 // seats.test.ts: tales about the domain, told as Vitest tests.
 import { describe } from '@effect/vitest';
 import { Arbitrary } from 'effect';
-import { Decision, Exploration, Story, Vitest } from 'effect-storytime/testing';
+import { Decision, Exploration, Story } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { Command, Event, Form, Message, Rejection, Request, form, seats } from './seats.ts';
 
 const { Book, Cancel } = Command.cases;
@@ -176,11 +177,11 @@ describe('seats', () => {
 
 Each tale is a test named by its title. Its failure message names the step and line that broke a rule, with `expected` and `actual` for Vitest to diff, and Vitest's code frame points at the tale. A failing exploration's message shows its shrunk path as story lines and the token that replays it. `covers` fails with the cases no tale touches.
 
-Add the reporter to `vitest.config.ts`, and every run writes the story record, a deterministic JSON file with every tale's lines, status, final model and cases ([docs/story-record.md](docs/story-record.md)):
+Add the reporter to `vitest.config.ts`, and every run writes the story record, a deterministic JSON file with every tale's lines, status, final models and cases ([docs/story-record.md](docs/story-record.md)):
 
 <!-- snippet: test/examples/vitest.config.ts#config -->
 ```ts
-import { Vitest } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -200,10 +201,10 @@ export default defineConfig({
 | [docs/domain-modelling.md](docs/domain-modelling.md) | DDD building blocks, choosing a Decider or a Program, rules for Schemas and functions. |
 | [docs/decider.md](docs/decider.md) | `Decider.make`, `handle`, the Store contract, Stores on `effect/sql` and in memory. |
 | [docs/program.md](docs/program.md) | `Program.make`, `Next`, `resume` and invariants. |
-| [docs/loop.md](docs/loop.md) | `Loop.make`, handlers, cancels and `persist`. |
-| [docs/stories.md](docs/stories.md) | Story steps, `anyOrder`, `restart`, shared steps, lines and failures. |
+| [docs/loop.md](docs/loop.md) | `Loop.make`, handlers, cancels, `persist`, invariants and `join`. |
+| [docs/stories.md](docs/stories.md) | Story steps, `anyOrder` and its finals, `restart`, shared steps, lines and failures. |
 | [docs/decisions.md](docs/decisions.md) | Decision steps, `run` and `against` a real Store. |
-| [docs/explorations.md](docs/explorations.md) | Generated paths through Programs and Deciders, counterexamples and replay. |
+| [docs/explorations.md](docs/explorations.md) | Generated paths through Programs and Deciders, properties, counterexamples and replay. |
 | [docs/strict-rules.md](docs/strict-rules.md) | What every tale checks, and every failure message. |
 | [docs/tales-and-covers.md](docs/tales-and-covers.md) | `Tale`, cases and `covers`. |
 | [docs/vitest.md](docs/vitest.md) | `Vitest.stories`, `covers`, `tell` and the `Reporter`. |

@@ -31,7 +31,8 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./dist/index.js",
-		"./testing": "./dist/testing/index.js"
+		"./testing": "./dist/testing/index.js",
+		"./vitest": "./dist/vitest/index.js"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",

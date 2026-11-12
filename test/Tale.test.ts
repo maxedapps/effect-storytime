@@ -66,7 +66,10 @@ describe('Tale', () => {
 	it.effect('renders and runs a story, an exploration and a decision alike', () =>
 		Effect.gen(function* () {
 			expect(Tale.lines(stops)).toEqual(Story.lines(stops));
-			expect(yield* Tale.run(stops)).toEqual(yield* Story.run(stops));
+			expect(yield* Tale.run(stops)).toEqual({
+				finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
+				cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
+			});
 			expect(Tale.lines(switches)).toEqual(Exploration.lines(switches));
 			expect(yield* Tale.run(switches)).toEqual({ runs: 3, cases: ['Message.Switched'] });
 			expect(Tale.lines(revokes)).toEqual(Decision.lines(revokes));

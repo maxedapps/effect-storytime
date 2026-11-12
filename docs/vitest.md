@@ -1,8 +1,8 @@
 # Vitest
 
-`import { Vitest } from 'effect-storytime/testing'`
+`import { Vitest } from 'effect-storytime/vitest'`
 
-The Vitest adapter registers tales as `@effect/vitest` tests and records each told tale in its test's meta. Its `Reporter` collects those records into one JSON file, the story record ([story-record.md](story-record.md)). It needs `vitest` 5.1 and `@effect/vitest` 4.1.2 as dev dependencies.
+The Vitest adapter has its own entry, so `effect-storytime/testing` loads neither Vitest nor Node's `fs` and runs in any test runner or tool. The adapter registers tales as `@effect/vitest` tests and records each told tale in its test's meta. Its `Reporter` collects those records into one JSON file, the story record ([story-record.md](story-record.md)). It needs `vitest` 5.1 and `@effect/vitest` 4.1.2 as dev dependencies.
 
 ## Registering tales
 
@@ -54,7 +54,7 @@ Add the reporter next to Vitest's own in `vitest.config.ts`:
 
 <!-- snippet: test/examples/vitest.config.ts#config -->
 ```ts
-import { Vitest } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({

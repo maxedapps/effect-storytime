@@ -1,5 +1,6 @@
 import { describe } from '@effect/vitest';
-import { Story, Vitest } from 'effect-storytime/testing';
+import { Story } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { chat, Command, Message, ready } from '../../../examples/chat.ts';
 
 const { Asked, Stopped } = Message.cases;

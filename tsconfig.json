@@ -11,7 +11,8 @@
 		"noEmit": true,
 		"paths": {
 			"effect-storytime": ["./src/index.ts"],
-			"effect-storytime/testing": ["./src/testing/index.ts"]
+			"effect-storytime/testing": ["./src/testing/index.ts"],
+			"effect-storytime/vitest": ["./src/vitest/index.ts"]
 		},
 		"noFallthroughCasesInSwitch": true,
 		"noImplicitOverride": true,

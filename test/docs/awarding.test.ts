@@ -3,7 +3,8 @@
 import { describe, expect, layer } from '@effect/vitest';
 import { Effect, Option, Ref, Stream } from 'effect';
 import { Decider, Loop } from 'effect-storytime';
-import { Decision, Story, Vitest } from 'effect-storytime/testing';
+import { Decision, Story } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import {
 	AlreadyEarned,
 	Award,

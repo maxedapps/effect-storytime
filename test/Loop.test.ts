@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Deferred, Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream } from 'effect';
-import { Loop } from 'effect-storytime';
+import { Loop, Program } from 'effect-storytime';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
 
@@ -324,6 +324,105 @@ describe('Loop', () => {
 			expect(yield* loop.model).toEqual(Chat.cases.Ready.make({ turns: [], left: 2 }));
 		})
 	);
+
+	/** Chat, but a stop sets `left` to -1 and asks again, which breaks `leftIsNeverNegative`. */
+	const careless = {
+		...chat,
+		update: (model: Chat, message: Message) =>
+			Message.guards.Stopped(message)
+				? {
+						model: Chat.cases.Ready.make({ turns: [], left: -1 }),
+						commands: [Ask.make({ turn: 't2', text: 'Again?' })]
+					}
+				: chat.update(model, message)
+	};
+	const brokenLeft = new Program.InvariantBroken({
+		invariant: 'leftIsNeverNegative',
+		state: 'Ready {"left":-1,"turns":[]}'
+	});
+
+	it.effect('dies on a message that breaks an invariant and keeps, saves and starts nothing', () =>
+		Effect.gen(function* () {
+			const log: Array<string> = [];
+			const loop = yield* Loop.make(careless, {
+				init: { model: asking },
+				handler: Command.match({
+					Ask: ({ turn }) => Effect.sync(() => void log.push(`ask ${turn}`)),
+					SaveTurn: noSave
+				}),
+				persist: {
+					load: Effect.succeedNone,
+					save: (model) => Effect.sync(() => void log.push(`store ${model._tag}`))
+				}
+			});
+			const defect = yield* loop
+				.dispatch(Stopped.make({}))
+				.pipe(Effect.catchDefect(Effect.succeed));
+			expect(defect).toEqual(brokenLeft);
+			expect(yield* loop.model).toEqual(asking);
+			yield* loop.dispatch(Answered.make({ turn: 't1', left: 1 }));
+			expect(yield* loop.model).toEqual(
+				Chat.cases.Ready.make({
+					turns: [{ id: 't1', question: 'Why Effect?', answer: '' }],
+					left: 1
+				})
+			);
+			expect(log).toEqual(['store Asking', 'store Ready']);
+		})
+	);
+
+	it.effect('dies when its start breaks an invariant', () =>
+		Effect.gen(function* () {
+			const defect = yield* Loop.make(chat, {
+				init: { model: Chat.cases.Ready.make({ turns: [], left: -1 }) },
+				handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave })
+			}).pipe(Effect.catchDefect(Effect.succeed));
+			expect(defect).toEqual(brokenLeft);
+		})
+	);
+
+	it.effect('joins a command that dies while its dispatch succeeds', () =>
+		Effect.gen(function* () {
+			const crash = new Error('the model provider is down');
+			const loop = yield* Loop.make(chat, {
+				init: { model: ready(2) },
+				handler: Command.match({ Ask: () => Effect.die(crash), SaveTurn: noSave })
+			});
+			yield* loop.dispatch(Asked.make({ turn: 't1', text: 'Why Effect?' }));
+			expect(yield* loop.join.pipe(Effect.catchDefect(Effect.succeed))).toBe(crash);
+		})
+	);
+
+	it.effect('joins a command whose message breaks an invariant', () =>
+		Effect.gen(function* () {
+			const loop = yield* Loop.make(careless, {
+				init: { model: ready(2) },
+				handler: Command.match({ Ask: () => Effect.succeed(Stopped.make({})), SaveTurn: noSave })
+			});
+			yield* loop.dispatch(Asked.make({ turn: 't1', text: 'Why Effect?' }));
+			expect(yield* loop.join.pipe(Effect.catchDefect(Effect.succeed))).toEqual(brokenLeft);
+			expect(yield* loop.model).toEqual(asking);
+		})
+	);
+
+	it.effect('joins until its scope closes', () =>
+		Effect.gen(function* () {
+			const scope = yield* Scope.make();
+			const loop = yield* Scope.provide(
+				Loop.make(chat, {
+					init: { model: asking, commands: [Ask.make({ turn: 't1', text: 'Why Effect?' })] },
+					handler: Command.match({ Ask: () => Effect.never, SaveTurn: noSave })
+				}),
+				scope
+			);
+			const joined = yield* Effect.forkChild(loop.join);
+			yield* Effect.yieldNow;
+			expect(joined.pollUnsafe()).toBeUndefined();
+			yield* Scope.close(scope, Exit.void);
+			expect(yield* Fiber.await(joined)).toEqual(Exit.void);
+		})
+	);
+
 	it.effect('starts the next command when a final stream message cancels its own command', () =>
 		Effect.gen(function* () {
 			const noted = yield* Deferred.make<string>();

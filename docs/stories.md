@@ -48,7 +48,7 @@ Every command `update` or `resume` produces is owed an assertion: a `commands`, 
 
 ## Cancels and anyOrder
 
-`anyOrder` checks that the outcome doesn't depend on the order in which things happen. The steps after it run once for every order. Inside it, a `resolve` or `emit` is skipped when its command was cancelled earlier in the same order, just as a Loop drops a late message from a cancelled command.
+`anyOrder` checks that the outcome doesn't depend on the order in which things happen. The steps after it run once for every order, so every assertion after it must hold in each order, and the story's outcome keeps each order's final model ([Running a story](#running-a-story)). Assert with `model(...)` after an `anyOrder` when the orders must converge. Inside it, a `resolve` or `emit` is skipped when its command was cancelled earlier in the same order, just as a Loop drops a late message from a cancelled command.
 
 <!-- snippet: test/docs/chat.test.ts#stops -->
 ```ts
@@ -152,13 +152,15 @@ expect(Tale.lines(talks)).toEqual([
 
 ## Running a story
 
-`Story.run(story)` gives `Effect<Story.Outcome<Model>, Story.StoryFailure>`. The outcome is the final model, the same model as a line, and the sorted cases the story sent, produced or reached. `Vitest.stories` runs it for you ([vitest.md](vitest.md)); call `Story.run` yourself only to look at the outcome.
+`Story.run(story)` gives `Effect<Story.Outcome<Model>, Story.StoryFailure>`. The outcome is `finals`, where each order the story ran in ended, and the sorted cases the story sent, produced or reached. A final is `{ order, model, final }`: the line numbers of the `anyOrder` steps as that order ran them (empty without an `anyOrder`), the final model, and the same model as a line. A nested `anyOrder` adds its own steps' numbers after those of the one around it. `Vitest.stories` runs it for you ([vitest.md](vitest.md)); call `Story.run` yourself only to look at the outcome.
 
 <!-- snippet: test/docs/chat.test.ts#outcome -->
 ```ts
-const { model, final, cases } = yield* Story.run(limited);
-expect(model).toEqual(Limited.make({ turns: [] }));
-expect(final).toBe('Limited {"turns":[]}');
+const { finals, cases } = yield* Story.run(limited);
+// One final per order; a story without anyOrder has one, with an empty order.
+expect(finals).toEqual([
+	{ order: [], model: Limited.make({ turns: [] }), final: 'Limited {"turns":[]}' }
+]);
 expect(cases).toEqual([
 	'Command.Ask',
 	'Message.Asked',
@@ -166,6 +168,12 @@ expect(cases).toEqual([
 	'Model.Asking',
 	'Model.Limited',
 	'Model.Ready'
+]);
+// With an anyOrder, one final per order, named by the line numbers of its steps as they ran.
+const { finals: orders } = yield* Story.run(stops);
+expect(orders.map(({ order, final }) => [order, final])).toEqual([
+	[[5, 6], 'Ready {"left":2,"turns":[]}'],
+	[[6, 5], 'Ready {"left":2,"turns":[]}']
 ]);
 ```
 
@@ -178,7 +186,7 @@ A failing story fails with a `Story.StoryFailure`. Its `message` is the whole fa
 | `title` | The story's title. |
 | `step` | The 1-based number of the failing line in `Story.lines(story)`. A failure at the end is `lines.length + 1`. |
 | `line` | That line, or `end`. |
-| `problem` | What went wrong. Inside an `anyOrder`, it starts with the failing order as the line numbers of its steps, such as `in order 5, 4: `. |
+| `problem` | What went wrong. Inside an `anyOrder`, it starts with the failing order as the line numbers of its steps, such as `in order 6, 5: `, the same list as a final's `order`. |
 | `expected`, `actual` | The two sides as lines, when they differ. Vitest diffs them. |
 
 <!-- snippet: test/docs/chat.test.ts#failure -->
@@ -215,5 +223,6 @@ expect(failure).toMatchObject({
 | `lines(story)` | `ReadonlyArray<string>` | The story as lines. |
 | `Story<Model, Message, Command>` | class | A story value: `title`, `program`, `steps`. |
 | `Step<Model, Message, Command>`, `Steps` | types | One step, and a list of them. |
-| `Outcome<Model>` | interface | `{ model, final, cases }`. |
+| `Outcome<Model>` | interface | `{ finals, cases }`, with at least one final. |
+| `Final<Model>` | interface | `{ order, model, final }`, where one order ended. |
 | `StoryFailure` | `Schema.TaggedError` | `{ title, step, line, problem, expected?, actual?, counterexample?, replay? }`. The last two are set only by explorations. |

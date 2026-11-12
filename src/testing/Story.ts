@@ -90,7 +90,14 @@ export class Story<Model, Message extends Tagged, Command extends Tagged> extend
 	readonly steps: Steps<Model, Message, Command>;
 }> {
 	[TypeId](): Told {
-		return { subject: this.program, lines: lines(this), run: run(this) };
+		return {
+			subject: this.program,
+			lines: lines(this),
+			run: Effect.map(run(this), ({ finals, cases }) => ({
+				finals: finals.map(({ order, final }) => ({ order, final })),
+				cases
+			}))
+		};
 	}
 }
 
@@ -137,13 +144,23 @@ export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailu
 	}
 }
 
-/**
- * What a passing story reached: its final model, also as a line, and the cases it sent, produced
- * or reached.
- */
-export interface Outcome<Model> {
+/** Where one order of a passing story ended: its final model, also as a line. */
+export interface Final<Model> {
+	/**
+	 * The order that got here, as the step numbers of every `anyOrder`'s steps as they ran, one
+	 * `anyOrder` after another; empty in a story without one.
+	 */
+	readonly order: ReadonlyArray<number>;
 	readonly model: Model;
 	readonly final: string;
+}
+
+/**
+ * What a passing story reached: one final per order its `anyOrder`s ran in, in the order they ran,
+ * and the cases it sent, produced or reached in any of them.
+ */
+export interface Outcome<Model> {
+	readonly finals: Arr.NonEmptyReadonlyArray<Final<Model>>;
 	readonly cases: ReadonlyArray<string>;
 }
 
@@ -159,10 +176,10 @@ interface Entry<Model, Message, Command> {
 	readonly children: ReadonlyArray<Entry<Model, Message, Command>>;
 }
 
-/** Where one order of a story's `anyOrder`s got to, and how to name that order. */
+/** Where one order of a story's `anyOrder`s got to, and that order. */
 interface Reached<Model, Command> {
 	readonly state: State<Model, Command>;
-	readonly order: string;
+	readonly order: ReadonlyArray<number>;
 }
 
 const layout = <Model, Message extends Tagged, Command extends Tagged>(
@@ -232,6 +249,15 @@ export const lines = <Model, Message extends Tagged, Command extends Tagged>(
 		(entry) => `${'  '.repeat(entry.depth)}${entry.line}`
 	);
 
+/**
+ * The step numbers of `units` as they run: a group's own steps, and an `anyOrder` once, by its
+ * line, since its own order follows.
+ */
+const numbers = <Model, Message, Command>(
+	units: ReadonlyArray<Entry<Model, Message, Command>>
+): ReadonlyArray<number> =>
+	units.flatMap((entry) => (Step.$is('Group')(entry.step) ? numbers(entry.children) : [entry.no]));
+
 const permutations = <A>(items: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<ReadonlyArray<A>> =>
 	Arr.match(items, {
 		onEmpty: () => [[]],
@@ -253,14 +279,15 @@ export const run = Effect.fnUntraced(function* <
 	const rules = machine(program, true);
 
 	const fail =
-		(entry: { readonly no: number; readonly line: string }, order: string) => (problem: Problem) =>
+		(entry: { readonly no: number; readonly line: string }, order: ReadonlyArray<number>) =>
+		(problem: Problem) =>
 			located(
 				story,
 				new StoryFailure({
 					title,
 					step: entry.no,
 					line: entry.line,
-					problem: `${order}${problem.message}`,
+					problem: `${order.length === 0 ? '' : `in order ${order.join(', ')}: `}${problem.message}`,
 					expected: problem.expected,
 					actual: problem.actual
 				})
@@ -291,7 +318,7 @@ export const run = Effect.fnUntraced(function* <
 	const go = (
 		state: State<Model, Command>,
 		queue: ReadonlyArray<Entry<Model, Message, Command>>,
-		order: string
+		order: ReadonlyArray<number>
 	): Effect.Effect<Arr.NonEmptyReadonlyArray<Reached<Model, Command>>, StoryFailure> => {
 		const [head, ...rest] = queue;
 		if (head === undefined) return Effect.succeed(Arr.of({ state, order }));
@@ -325,9 +352,7 @@ export const run = Effect.fnUntraced(function* <
 									cancelled: Option.orElseSome(state.cancelled, () => [])
 								},
 								units,
-								`${order}in order ${flatten(units)
-									.map((entry) => entry.no)
-									.join(', ')}: `
+								[...order, ...numbers(units)]
 							),
 							(orders) =>
 								Effect.forEach(orders, (reached) =>
@@ -344,7 +369,7 @@ export const run = Effect.fnUntraced(function* <
 	if (first === undefined || !Step.$is('Given')(first.step)) {
 		return yield* fail(
 			first ?? { no: 1, line: '' },
-			''
+			[]
 		)(new Problem({ message: 'a story starts with given(model)' }));
 	}
 	const crowded = all.find(
@@ -352,15 +377,18 @@ export const run = Effect.fnUntraced(function* <
 			Step.$is('AnyOrder')(entry.step) && (entry.children.length < 2 || entry.children.length > 5)
 	);
 	if (crowded) {
-		return yield* fail(crowded, '')(new Problem({ message: 'anyOrder takes 2 to 5 steps' }));
+		return yield* fail(crowded, [])(new Problem({ message: 'anyOrder takes 2 to 5 steps' }));
 	}
-	const initial = yield* Effect.mapError(rules.start(first.step.model), fail(first, ''));
-	const reached = yield* go(initial, entries, '');
+	const initial = yield* Effect.mapError(rules.start(first.step.model), fail(first, []));
+	const reached = yield* go(initial, entries, []);
 	yield* Effect.forEach(reached, finish);
-	const [{ state: final }] = reached;
+	const show = describer(program.Model);
 	return {
-		model: final.model,
-		final: describer(program.Model)(final.model),
+		finals: Arr.map(reached, ({ state, order }) => ({
+			order,
+			model: state.model,
+			final: show(state.model)
+		})),
 		cases: Arr.dedupe(reached.flatMap(({ state }) => state.cases)).toSorted()
 	};
 });

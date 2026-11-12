@@ -3,7 +3,6 @@
  * Problem that the runner turns into a StoryFailure at the current step.
  */
 import { Data, Effect, Result, Schema } from 'effect';
-import type { Invariants } from '../../Program.ts';
 import { canonical, describer } from '../../internal/canonical.ts';
 
 export class Problem extends Data.Error<{
@@ -87,18 +86,22 @@ export const role = <A>(schema: Schema.Codec<A, unknown>, what: string) => ({
 	show: describer(schema)
 });
 
-/** Checks every named invariant on a model or state. */
+/** Checks every named predicate, an invariant or property, on a value; `kind` names it in a Problem. */
 export const holds =
-	<A>(invariants: Invariants<A>, describe: (value: A) => string) =>
+	<A>(
+		kind: 'invariant' | 'property',
+		predicates: Readonly<Record<string, (value: A) => boolean>>,
+		describe: (value: A) => string
+	) =>
 	(value: A) =>
-		Effect.forEach(Object.entries(invariants), ([name, invariant]) =>
+		Effect.forEach(Object.entries(predicates), ([name, predicate]) =>
 			Effect.flatMap(
-				attempt(`invariant ${name}`, () => invariant(value)),
+				attempt(`${kind} ${name}`, () => predicate(value)),
 				(ok) =>
 					ok
 						? Effect.void
 						: Effect.fail(
-								new Problem({ message: `invariant ${name} does not hold`, actual: describe(value) })
+								new Problem({ message: `${kind} ${name} does not hold`, actual: describe(value) })
 							)
 			)
 		).pipe(Effect.asVoid);

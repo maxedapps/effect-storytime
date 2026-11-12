@@ -1,8 +1,8 @@
 /**
  * An exploration generates tales instead of telling one: random paths of messages, command answers
  * and restarts through a Program, or of commands through a Decider, each checked with every strict
- * rule a story or decision runs except command assertions. A failing path shrinks to a short tale,
- * its counterexample.
+ * rule a story or decision runs except command assertions, plus the exploration's own named
+ * properties. A failing path shrinks to a short tale, its counterexample.
  */
 import {
 	Arbitrary,
@@ -17,15 +17,24 @@ import {
 } from 'effect';
 import type { Decider } from '../Decider.ts';
 import * as Decision from './Decision.ts';
-import { Broken } from './internal/check.ts';
+import { attempt, Broken } from './internal/check.ts';
 import type { Problem } from './internal/check.ts';
 import { caser, strict } from './internal/decider.ts';
+import type { Ruling } from './internal/decider.ts';
 import { machine } from './internal/machine.ts';
-import type { State as Running } from './internal/machine.ts';
+import type { State as Running, Update } from './internal/machine.ts';
 import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import type { Program, Tagged } from '../Program.ts';
 import * as Story from './Story.ts';
+
+export type { Ruling, Update };
+
+/**
+ * Named assertions every step of a path must pass, like invariants but over a whole step: what
+ * held before, what ran and what it gave.
+ */
+export type Properties<A> = Readonly<Record<string, (value: A) => boolean>>;
 
 interface Settings {
 	/** How many paths to check; 100 by default. */
@@ -47,13 +56,17 @@ export interface Options<Model, Message, Command> extends Settings {
 	readonly emits?: (command: Command) => ReadonlyArray<Message>;
 	/** Whether paths restart; by default they do. */
 	readonly restarts?: boolean;
+	/** Checked on every `update` a path runs, after its strict rules. */
+	readonly properties?: Properties<Update<Model, Message, Command>>;
 }
 
-export interface DecisionOptions<State, Command> extends Settings {
+export interface DecisionOptions<State, Command, Event, Rejection> extends Settings {
 	/** The states a path starts from; the Decider's `initial` by default. */
 	readonly given?: Arbitrary.Arbitrary<State>;
 	/** The commands a path decides; by default any the Command Schema allows. */
 	readonly when?: Arbitrary.Arbitrary<Command>;
+	/** Checked on every command a path decides, after its strict rules. */
+	readonly properties?: Properties<Ruling<State, Command, Event, Rejection>>;
 }
 
 /** One generated path, walked: the cases it touched, or where it broke a rule. */
@@ -100,7 +113,7 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 				options.send ?? Arbitrary.schema(program.Message),
 				restarts
 			),
-			walker(title, program, options.replies ?? nothing, options.emits ?? nothing)
+			walker(title, program, options)
 		)
 	});
 	return made(exploration, make);
@@ -110,7 +123,12 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 export const decisions = <State, Command, Event, Rejection>(
 	title: string,
 	decider: Decider<State, Command, Event, Rejection>,
-	options: DecisionOptions<NoInfer<State>, NoInfer<Command>> = {}
+	options: DecisionOptions<
+		NoInfer<State>,
+		NoInfer<Command>,
+		NoInfer<Event>,
+		NoInfer<Rejection>
+	> = {}
 ): Exploration =>
 	made(
 		new Exploration({
@@ -123,7 +141,7 @@ export const decisions = <State, Command, Event, Rejection>(
 					start: options.given ?? Arbitrary.Constant(decider.initial),
 					commands: Arbitrary.array(options.when ?? Arbitrary.schema(decider.Command))
 				}),
-				deciderWalker(title, decider)
+				deciderWalker(title, decider, options.properties)
 			)
 		}),
 		decisions
@@ -183,50 +201,48 @@ type Move<Model, Message, Command> = readonly [
 const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	title: string,
 	program: Program<Model, Message, Command>,
-	replies: (command: Command) => ReadonlyArray<Message>,
-	emits: (command: Command) => ReadonlyArray<Message>
+	options: Options<Model, Message, Command>
 ) => {
-	const rules = machine(program, false);
+	const { replies = nothing, emits = nothing } = options;
+	const rules = machine(program, false, options.properties);
 	const story = Story.of(program);
 
-	/** Answers the pending command at `pick` with its reply or stream message at `choice`. */
-	const reply = (
-		state: Running<Model, Command>,
-		pick: number,
-		choice: number
-	): Option.Option<Move<Model, Message, Command>> =>
-		Arr.match(state.pending, {
-			onEmpty: Option.none,
-			onNonEmpty: (pending) =>
-				Option.flatMap(Arr.get(pending, pick % pending.length), ({ command }) =>
-					Arr.match(
-						[
-							...replies(command).map((message): Move<Model, Message, Command> => [
-								story.resolve(command, message),
-								rules.resolve(state, command, Option.some(message))
-							]),
-							...emits(command).map((message): Move<Model, Message, Command> => [
-								story.emit(command, message),
-								rules.emit(state, command, message)
-							])
-						],
-						{
-							onEmpty: Option.none,
-							onNonEmpty: (answers) => Arr.get(answers, choice % answers.length)
-						}
-					)
-				)
+	/** The replies and stream messages of a command; a throwing callback is a Problem. */
+	const answers = Effect.fnUntraced(function* (state: Running<Model, Command>, command: Command) {
+		const replied = yield* attempt('replies', () => replies(command));
+		const emitted = yield* attempt('emits', () => emits(command));
+		return [
+			...replied.map((message): Move<Model, Message, Command> => [
+				story.resolve(command, message),
+				rules.resolve(state, command, Option.some(message))
+			]),
+			...emitted.map((message): Move<Model, Message, Command> => [
+				story.emit(command, message),
+				rules.emit(state, command, message)
+			])
+		];
+	});
+
+	/**
+	 * Answers the pending command at `pick` with its reply or stream message at `choice`. With none
+	 * to pick from, the index is `NaN`, which `Arr.get` finds nothing at.
+	 */
+	const reply = (state: Running<Model, Command>, pick: number, choice: number) =>
+		Option.match(Arr.get(state.pending, pick % state.pending.length), {
+			onNone: () => Effect.succeedNone,
+			onSome: ({ command }) =>
+				Effect.map(answers(state, command), (moves) => Arr.get(moves, choice % moves.length))
 		});
 
 	const moved = (
 		step: Story.Step<Model, Message, Command>,
 		effect: Effect.Effect<Running<Model, Command>, Problem>
-	): Option.Option<Move<Model, Message, Command>> => Option.some([step, effect]);
+	) => Effect.succeedSome<Move<Model, Message, Command>>([step, effect]);
 
 	const move = (
 		state: Running<Model, Command>,
 		action: Action<Message>
-	): Option.Option<Move<Model, Message, Command>> =>
+	): Effect.Effect<Option.Option<Move<Model, Message, Command>>, Problem> =>
 		Action.$match(action, {
 			Send: ({ message }) => moved(story.send(message), rules.send(state, message)),
 			Reply: ({ pick, choice }) => reply(state, pick, choice),
@@ -245,7 +261,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 			});
 		let state = yield* Effect.mapError(rules.start(path.start), broken);
 		for (const action of path.actions) {
-			const next = move(state, action);
+			const next = yield* Effect.mapError(move(state, action), broken);
 			if (Option.isSome(next)) {
 				const [step, effect] = next.value;
 				told.push(step);
@@ -259,9 +275,10 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 /** Walks a Decider's path, turning each command into a `when`, and gives the cases it touched. */
 const deciderWalker = <State, Command, Event, Rejection>(
 	title: string,
-	decider: Decider<State, Command, Event, Rejection>
+	decider: Decider<State, Command, Event, Rejection>,
+	properties: Properties<Ruling<State, Command, Event, Rejection>> | undefined
 ) => {
-	const rules = strict(decider);
+	const rules = strict(decider, properties);
 	const touch = caser(decider);
 	const decision = Decision.of(decider);
 	return Effect.fnUntraced(function* (path: {

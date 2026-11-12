@@ -26,9 +26,11 @@ const counts = Exploration.make('the lamp counts switches', Lamp.lamp, {
 });
 
 /** The chat's own questions, answers and refusals, so turns match the pending ask. */
-const talks = (program: Program.Program<Chat, Message, Command>, runs = 100) =>
+const talks = (
+	program: Program.Program<Chat, Message, Command>,
+	options: Partial<Exploration.Options<Chat, Message, Command>> = {}
+) =>
 	Exploration.make('a chat talks', program, {
-		runs,
 		given: Arbitrary.Constant(ready(2)),
 		send: Arbitrary.map(Arbitrary.schema(Schema.Literals(['t1', 't2', 'stop'])), (turn): Message =>
 			turn === 'stop' ? Stopped.make({}) : Asked.make({ turn, text: `question ${turn}` })
@@ -42,8 +44,13 @@ const talks = (program: Program.Program<Chat, Message, Command>, runs = 100) =>
 					]
 				: [],
 		emits: (command) =>
-			Command.guards.Ask(command) ? [Delta.make({ turn: command.turn, text: 'hi' })] : []
+			Command.guards.Ask(command) ? [Delta.make({ turn: command.turn, text: 'hi' })] : [],
+		...options
 	});
+
+const throws = (name: string) => () => {
+	throw new Error(name);
+};
 
 const resuming = (resume: (current: Lamp.Lamp) => Program.Next<Lamp.Lamp, Lamp.Command>) =>
 	Program.make({
@@ -303,7 +310,7 @@ describe('Exploration', () => {
 						!Chat.guards.Asking(current) || current.turns.length === 0 || current.answer === ''
 				}
 			});
-			const failure = yield* Effect.flip(Exploration.check(talks(strict, 400)));
+			const failure = yield* Effect.flip(Exploration.check(talks(strict, { runs: 400 })));
 			expect(failure.step).toBe(5);
 			expect(failure.counterexample).toEqual([
 				'given Ready {"left":2,"turns":[]}',
@@ -312,6 +319,109 @@ describe('Exploration', () => {
 				'send Asked {"text":"question t2","turn":"t2"}',
 				'emit Ask {"text":"question t2","turn":"t2"} → Delta {"text":"hi","turn":"t2"}'
 			]);
+		})
+	);
+
+	it.effect('shrinks a broken property to the shortest story that breaks it', () =>
+		Effect.gen(function* () {
+			const countsUp = Exploration.make('switches count up', Lamp.variant(Lamp.lamp.update), {
+				given: off,
+				send: switches,
+				properties: { countsUp: ({ before, after }) => after.count >= before.count }
+			});
+			const failure = yield* Effect.flip(Exploration.check(countsUp));
+			expect(failure).toEqual(
+				new Story.StoryFailure({
+					title: 'switches count up',
+					step: 2,
+					line: Exploration.lines(countsUp)[0] ?? '',
+					problem: 'property countsUp does not hold',
+					expected: undefined,
+					actual:
+						'{"after":{"at":"2026-11-04T00:00:00.000Z","count":-1,"on":1},' +
+						'"before":{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0},' +
+						'"cancels":[],"commands":[],' +
+						'"message":{"_tag":"Switched","at":"2026-11-04T00:00:00.000Z","by":-1}}',
+					counterexample: [given, sent(-1)],
+					replay: failure.replay ?? ''
+				})
+			);
+			const replayed = yield* Effect.flip(
+				Exploration.check(countsUp, { replay: failure.replay ?? '' })
+			);
+			expect(replayed.counterexample).toEqual([given, sent(-1)]);
+		})
+	);
+
+	it.effect('checks properties on every update a path runs, answers included', () =>
+		Effect.gen(function* () {
+			const explored = yield* Exploration.check(
+				talks(chat, {
+					properties: {
+						stopCancelsTheAsk: ({ before, message, cancels }) =>
+							(Message.guards.Stopped(message) && Chat.guards.Asking(before)) ===
+							(cancels.length === 1),
+						asksWhatItIsAsked: ({ message, after, commands }) =>
+							commands.every(
+								(command) =>
+									!Command.guards.Ask(command) ||
+									(Message.guards.Asked(message) &&
+										Chat.guards.Asking(after) &&
+										command.turn === message.turn)
+							)
+					}
+				})
+			);
+			expect(explored.runs).toBe(100);
+			const answered = yield* Effect.flip(
+				Exploration.check(
+					talks(chat, {
+						properties: { noAnswerSaves: ({ commands }) => commands.length === 0 }
+					})
+				)
+			);
+			expect(answered.problem).toBe('property noAnswerSaves does not hold');
+		})
+	);
+
+	it.effect('shrinks a throwing property', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.make('switches', Lamp.variant(Lamp.lamp.update), {
+						given: off,
+						send: switches,
+						properties: {
+							small: ({ message }) => {
+								if (message.by > 2) throw new Error('too far');
+								return true;
+							}
+						}
+					})
+				)
+			);
+			expect(failure.problem).toBe('property small threw: Error: too far');
+			expect(failure.counterexample).toEqual([given, sent(3)]);
+		})
+	);
+
+	it.effect('shrinks throwing replies and emits to the step that made the command', () =>
+		Effect.gen(function* () {
+			for (const [options, problem] of [
+				[{ replies: throws('no reply') }, 'replies threw: Error: no reply'],
+				[{ emits: throws('no stream') }, 'emits threw: Error: no stream']
+			] as const) {
+				const failure = yield* Effect.flip(Exploration.check(talks(chat, options)));
+				expect(failure).toMatchObject({ step: 2, problem });
+				expect(failure.counterexample).toEqual([
+					'given Ready {"left":2,"turns":[]}',
+					expect.stringMatching(/^send Asked /)
+				]);
+				const replayed = yield* Effect.flip(
+					Exploration.check(talks(chat, options), { replay: failure.replay ?? '' })
+				);
+				expect(replayed.counterexample).toEqual(failure.counterexample);
+			}
 		})
 	);
 
@@ -408,6 +518,49 @@ describe('Exploration', () => {
 					replay: failure.replay ?? ''
 				})
 			);
+		})
+	);
+
+	it.effect('shrinks a broken decision property and shows the ruling', () =>
+		Effect.gen(function* () {
+			const accepting = Exploration.decisions('every command is accepted', membership, {
+				properties: { accepted: ({ decided }) => Result.isSuccess(decided) }
+			});
+			const failure = yield* Effect.flip(Exploration.check(accepting));
+			expect(failure).toMatchObject({
+				step: 2,
+				problem: 'property accepted does not hold',
+				actual:
+					'{"after":{"active":0,"checkedAt":null,"source":"teachable"},' +
+					'"before":{"active":0,"checkedAt":null,"source":"teachable"},' +
+					'"command":{"_tag":"Revoke"},' +
+					'"decided":{"_tag":"Failure","failure":{"_tag":"NotActive"}}}',
+				counterexample: ['given {"active":0,"checkedAt":null,"source":"teachable"}', 'when Revoke']
+			});
+			const replayed = yield* Effect.flip(
+				Exploration.check(accepting, { replay: failure.replay ?? '' })
+			);
+			expect(replayed.counterexample).toEqual(failure.counterexample);
+		})
+	);
+
+	it.effect('checks decision properties on every command a path decides', () =>
+		Effect.gen(function* () {
+			expect(
+				yield* Exploration.check(
+					Exploration.decisions('revoking deactivates', membership, {
+						runs: 50,
+						properties: {
+							revokeDeactivates: ({ command, decided, after }) =>
+								!MembershipCommand.guards.Revoke(command) ||
+								Result.isFailure(decided) ||
+								!after.active,
+							rejectionKeepsTheState: ({ before, decided, after }) =>
+								Result.isSuccess(decided) || before === after
+						}
+					})
+				)
+			).toMatchObject({ runs: 50 });
 		})
 	);
 

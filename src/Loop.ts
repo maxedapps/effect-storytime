@@ -16,7 +16,8 @@ import {
 	Stream,
 	SubscriptionRef
 } from 'effect';
-import { stringifier } from './internal/canonical.ts';
+import { describer, stringifier } from './internal/canonical.ts';
+import { enforce } from './internal/invariants.ts';
 import type { Next, Program, Tagged } from './Program.ts';
 
 /**
@@ -49,6 +50,11 @@ export interface Loop<Model, Message> {
 	readonly dispatch: (message: Message) => Effect.Effect<void>;
 	readonly model: Effect.Effect<Model>;
 	readonly changes: Stream.Stream<Model>;
+	/**
+	 * Waits on the Loop's commands: succeeds once its scope has closed, dies as soon as a command
+	 * dies, such as a handler that throws or a message that breaks an invariant.
+	 */
+	readonly join: Effect.Effect<void>;
 }
 
 interface Delivery<Message> {
@@ -60,6 +66,8 @@ interface Delivery<Message> {
 
 /**
  * Starts a Loop in the current scope. A stored model is resumed, otherwise `init` applies. Each
+ * model must satisfy the Program's invariants before it is saved, published or its commands
+ * start; one that breaks them dies with `Program.InvariantBroken` and changes nothing. Each
  * model is saved before its commands start. Closing the scope applies the messages already
  * dispatched, then interrupts every command.
  */
@@ -80,11 +88,12 @@ export const make = Effect.fnUntraced(function* <
 	// The Loop's own scope releases in order whatever the caller's strategy: the deliveries drain
 	// before the FiberMap interrupts the commands they started.
 	const scope = yield* Scope.fork(yield* Effect.scope, 'sequential');
-	const fibers = yield* Scope.provide(FiberMap.make<string>(), scope);
+	const fibers = yield* Scope.provide(FiberMap.make<string, void, never>(), scope);
+	const holds = enforce(program.invariants, describer(program.Model));
 	const deliveries = yield* Queue.unbounded<Delivery<Message>, Cause.Done>();
 
-	const sender = (live: Effect.Effect<boolean>) => (message: Message) =>
-		Effect.gen(function* () {
+	const sender = (live: Effect.Effect<boolean>) =>
+		Effect.fnUntraced(function* (message: Message) {
 			const applied = yield* Deferred.make<void>();
 			const open = yield* Queue.offer(deliveries, { message, applied, live });
 			return yield* open ? Deferred.await(applied) : Effect.interrupt;
@@ -107,6 +116,7 @@ export const make = Effect.fnUntraced(function* <
 		});
 
 	const apply = Effect.fnUntraced(function* (next: Next<Model, Command>) {
+		yield* holds(next.model);
 		if (options.persist) yield* options.persist.save(next.model);
 		yield* SubscriptionRef.set(model, next.model);
 		for (const command of next.cancels ?? []) yield* FiberMap.remove(fibers, keyOf(command));
@@ -137,6 +147,7 @@ export const make = Effect.fnUntraced(function* <
 	return {
 		dispatch: sender(Effect.succeed(true)),
 		model: SubscriptionRef.get(model),
-		changes: SubscriptionRef.changes(model)
+		changes: SubscriptionRef.changes(model),
+		join: FiberMap.join(fibers)
 	};
 });

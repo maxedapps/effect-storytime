@@ -10,6 +10,17 @@ export const Failure = Schema.Struct(Struct.omit(StoryFailure.fields, ['_tag', '
 
 export type Failure = typeof Failure.Type;
 
+/**
+ * Where a passing story ended in one order of its `anyOrder`s, as a line. The order names the step
+ * numbers of their steps as they ran, and is empty without an `anyOrder`.
+ */
+export const Final = Schema.Struct({
+	order: Schema.Array(Schema.Int),
+	final: Schema.String
+});
+
+export type Final = typeof Final.Type;
+
 export const StoryRecord = Schema.Struct({
 	kind: Schema.Literals(['Story', 'Exploration', 'Decision']),
 	title: Schema.String,
@@ -19,8 +30,10 @@ export const StoryRecord = Schema.Struct({
 	test: Schema.String,
 	lines: Schema.Array(Schema.String),
 	status: Schema.Literals(['passed', 'failed']),
-	/** The final model or state as a line, once a story or decision passed. */
+	/** The final state as a line, once a decision passed. */
 	final: Schema.optional(Schema.String),
+	/** Where a passing story ended, one entry per order. */
+	finals: Schema.optional(Schema.Array(Final)),
 	/** Present when the tale failed with a `StoryFailure`; another error leaves only the status. */
 	failure: Schema.optional(Failure),
 	/** The cases a passing story or exploration sent, produced or reached. */

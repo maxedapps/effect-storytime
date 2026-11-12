@@ -4,14 +4,15 @@ These pages are for coding agents that build a domain with effect-storytime and 
 
 Every TypeScript block here is a region of a file in this repository, marked by an HTML comment such as `<!-- snippet: test/examples/chat.ts#update -->` above it. Those files are type-checked, linted and run by the test suite, and `test/snippets.test.ts` fails when a block differs from its region. The code shown is the code that runs against the current API, and you can open the named file to see the rest of it.
 
-## The two entries
+## The three entries
 
 | Import | Modules | Use it in |
 | --- | --- | --- |
 | `effect-storytime` | `Decider`, `Program`, `Loop` | production code |
-| `effect-storytime/testing` | `Story`, `Decision`, `Exploration`, `Tale`, `Vitest`, `StoryRecord` | tests and tools |
+| `effect-storytime/testing` | `Story`, `Decision`, `Exploration`, `Tale`, `StoryRecord` | tests and tools, in any runner |
+| `effect-storytime/vitest` | `Vitest` | Vitest test files and `vitest.config.ts` |
 
-Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The domain entry imports nothing from `testing`, so production code loads none of it. `effect` 4.1.2 or newer is the one required peer; the testing entry also needs `vitest` 5.1 and `@effect/vitest` 4.1.2.
+Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The domain entry imports nothing from the other two, so production code loads none of it, and the testing entry loads neither Vitest nor Node's `fs`. `effect` 4.1.2 or newer is the one required peer; the vitest entry also needs `vitest` 5.1 and `@effect/vitest` 4.1.2.
 
 ## Pages
 
@@ -54,4 +55,6 @@ The ADRs in [`adrs/`](../adrs) record the design:
 
 - [0001](../adrs/0001-effect-native-story-library.md): tales are Effect values with strict rules built into every run, and the Vitest adapter is optional.
 - [0002](../adrs/0002-decider-explorations-and-covers.md): explorations of Deciders, a Decider's cases, and why `covers` counts only the subject's own tales.
-- [0003](../adrs/0003-lean-domain-library.md): a Decider is the command side and a Program the process manager, with no aggregate, repository or event store types. It also sets the Store contract and the two entries.
+- [0003](../adrs/0003-lean-domain-library.md): a Decider is the command side and a Program the process manager, with no aggregate, repository or event store types. It also sets the Store contract.
+- [0004](../adrs/0004-readable-failures-and-bound-steps.md): failure messages that show the step, line and counterexample, and step builders bound to their subject (`Story.of`, `Decision.of`).
+- [0005](../adrs/0005-honest-contracts.md): one invariant contract for tales, `handle` and a Loop; every `anyOrder` order's final; exploration properties; the vitest entry; `Loop.join`.

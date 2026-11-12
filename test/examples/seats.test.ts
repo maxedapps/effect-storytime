@@ -2,7 +2,8 @@
 // seats.test.ts: tales about the domain, told as Vitest tests.
 import { describe } from '@effect/vitest';
 import { Arbitrary } from 'effect';
-import { Decision, Exploration, Story, Vitest } from 'effect-storytime/testing';
+import { Decision, Exploration, Story } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { Command, Event, Form, Message, Rejection, Request, form, seats } from './seats.ts';
 
 const { Book, Cancel } = Command.cases;

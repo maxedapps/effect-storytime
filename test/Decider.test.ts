@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Effect, Exit, Option } from 'effect';
-import { Decider } from 'effect-storytime';
+import { Effect, Option } from 'effect';
+import { Decider, Program } from 'effect-storytime';
 import {
 	at,
 	Check,
@@ -30,6 +30,28 @@ describe('Decider.handle', () => {
 				expect(yield* store.log).toEqual(['begin', 'load u1', 'save u1 Granted', 'commit']);
 				expect(yield* store.load('u1')).toEqual(Option.some(granted));
 			}).pipe(Effect.provide(Memberships.layer))
+	);
+
+	it.effect('runs each command in the span Decider.handle', () =>
+		Effect.gen(function* () {
+			const store = yield* Memberships;
+			const spans: Array<string> = [];
+			const traced = Memberships.of({
+				...store,
+				transaction: (effect) =>
+					Effect.currentSpan.pipe(
+						Effect.orDie,
+						Effect.flatMap((span) => {
+							spans.push(span.name);
+							return store.transaction(effect);
+						})
+					)
+			});
+			yield* handle('u1', Check.make({ active: false, at })).pipe(
+				Effect.provideService(Memberships, traced)
+			);
+			expect(spans).toEqual(['Decider.handle']);
+		}).pipe(Effect.provide(Memberships.layer))
 	);
 
 	it.effect('gives the loaded state and saves nothing when there are no events', () =>
@@ -74,14 +96,15 @@ describe('Decider.handle', () => {
 						? { ...membership.evolve(current, event), checkedAt: null }
 						: membership.evolve(current, event)
 			});
-			const exit = yield* Effect.exit(
-				Decider.handle(careless, Memberships)('u1', Grant.make({ source: 'teachable', at }))
-			);
-			const broken = new Decider.InvariantBroken({
+			const defect = yield* Decider.handle(careless, Memberships)(
+				'u1',
+				Grant.make({ source: 'teachable', at })
+			).pipe(Effect.catchDefect(Effect.succeed));
+			const broken = new Program.InvariantBroken({
 				invariant: 'checkedWhenActive',
 				state: '{"active":1,"checkedAt":null,"source":"teachable"}'
 			});
-			expect(exit).toEqual(Exit.die(broken));
+			expect(defect).toEqual(broken);
 			expect(broken._tag).toBe('InvariantBroken');
 			expect(broken.message).toBe(
 				'invariant checkedWhenActive does not hold for {"active":1,"checkedAt":null,"source":"teachable"}'

@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect } from 'effect';
-import { Decision, Exploration, Story, Vitest } from 'effect-storytime/testing';
+import { Decision, Exploration, Story } from 'effect-storytime/testing';
+import { Vitest } from 'effect-storytime/vitest';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import { membership, Memberships, none, NotActive, Revoke } from './examples/membership.ts';
@@ -83,7 +84,8 @@ describe('tell', () => {
 					title: 'a question is stopped',
 					lines: Story.lines(stops),
 					status: 'passed',
-					final: 'Ready {"left":1,"turns":[]}',
+					final: undefined,
+					finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
 					cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
 				},
 				{
@@ -92,7 +94,24 @@ describe('tell', () => {
 					lines: ['explore 3 runs of up to 5 steps, seed "the lamp switches"'],
 					status: 'passed',
 					final: undefined,
+					finals: undefined,
 					cases: ['Message.Switched']
+				}
+			]);
+		})
+	);
+
+	it.effect('records only the record fields of a story run it is given', (ctx) =>
+		Effect.gen(function* () {
+			yield* Vitest.tell(ctx, stops, Story.run(stops));
+			expect(ctx.task.meta.storytime).toEqual([
+				{
+					kind: 'Story',
+					title: 'a question is stopped',
+					lines: Story.lines(stops),
+					status: 'passed',
+					finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
+					cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
 				}
 			]);
 		})
@@ -149,6 +168,7 @@ describe('tell', () => {
 					lines: Decision.lines(revokes),
 					status: 'passed',
 					final: '{"active":0,"checkedAt":null,"source":"teachable"}',
+					finals: undefined,
 					cases: ['Command.Revoke', 'Rejection.NotActive']
 				}
 			]);

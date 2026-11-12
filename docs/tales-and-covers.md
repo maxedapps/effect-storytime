@@ -11,7 +11,7 @@ A tale is a story, a decision or an exploration. `Tale` works on any of them, so
 | `cases(subject)` | `ReadonlyArray<string>` | Every case a Program or a Decider has. |
 | `covers(subject, tales)` | `Effect<void, StoryFailure \| Uncovered>` | Runs the tales and requires them to touch every case of the subject between them. |
 | `Tale` | interface | `{ _tag: 'Story' \| 'Exploration' \| 'Decision', title }`, plus the protocol the three implement. |
-| `Reached` | interface | `{ final?, cases }`, what a passing tale reached. Explorations have no `final`. |
+| `Reached` | interface | `{ final?, finals?, cases }`, what a passing tale reached: a decision's `final` state as a line, or a story's `finals`, one `{ order, final }` per order. Explorations have neither. |
 | `Uncovered` | `Schema.TaggedError` | `{ missing }`, message `no tale touches <cases>`. |
 
 ## Cases

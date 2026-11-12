@@ -2,7 +2,7 @@
  * A Program is a pure state machine: `update` turns a model and a message into the next model
  * and the commands to run. Commands are Schema data; a Loop runs them, a story asserts them.
  */
-import type { Schema } from 'effect';
+import { Schema } from 'effect';
 
 /** A value with a `_tag`, such as a case of `Schema.TaggedUnion`. */
 export interface Tagged {
@@ -21,8 +21,26 @@ export interface Next<Model, Command> {
 	readonly cancels?: ReadonlyArray<Command>;
 }
 
-/** Named predicates every model must satisfy, checked after each step of every story. */
+/**
+ * Named predicates every model or state must satisfy. A Loop checks a Program's on every model
+ * before it keeps it, `Decider.handle` a Decider's on the state each command reaches, and every
+ * tale checks them at each step.
+ */
 export type Invariants<Model> = Readonly<Record<string, (model: Model) => boolean>>;
+
+/**
+ * The defect a Loop or `Decider.handle` dies with when a model or state breaks an invariant. It
+ * dies before anything is saved, published or started.
+ */
+export class InvariantBroken extends Schema.TaggedError<InvariantBroken>()('InvariantBroken', {
+	invariant: Schema.String,
+	/** The model or state as a line, as stories show it. */
+	state: Schema.String
+}) {
+	override get message() {
+		return `invariant ${this.invariant} does not hold for ${this.state}`;
+	}
+}
 
 export interface Program<Model, Message extends Tagged, Command extends Tagged> {
 	readonly Model: Schema.Codec<Model, unknown>;

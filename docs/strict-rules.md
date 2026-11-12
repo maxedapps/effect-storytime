@@ -7,7 +7,7 @@ Every story, decision and explored path runs these rules at every step. They are
 1. **Schema validity.** Every value a tale gives (the `given` model or state, each message and command) and every value the subject produces (models, commands, cancels, events, rejections, states) must satisfy its Schema. Values are checked on their Type side, so a `Schema.BooleanFromBit` field takes `true`, not `1`.
 2. **Purity.** `update`, `resume`, `decide` and `evolve` each run twice on the same input. Their input must be unchanged afterwards, and both results must be equal by canonical JSON. A throw fails the step.
 3. **JSON copies.** The model or state, and every message, command and event, must survive a round trip through its Schema's JSON unchanged. The run continues from the copy, so a callback that mutates a value it shares with the tale never changes the tale or the run.
-4. **Invariants.** A Program's or Decider's invariants hold for every model or state, including every state a command's events pass through.
+4. **Invariants.** A Program's invariants hold for the `given` model and every model `update` or `resume` gives. A Decider's invariants hold for the `given` state and, at the end of each command, for the state its events reached. The states between a command's events aren't checked, so a command may pass through a state that only its last event resolves, such as a transfer's debit before its credit. `Decider.handle` and a Loop check the same invariants at the same points ([decider.md](decider.md#a-broken-invariant), [loop.md](loop.md#invariants)).
 5. **Owed commands** (stories only). Every command `update` or `resume` produces is owed an assertion until a `commands`, `resolve` or `emit` step names it. A cancel or restart that drops an owed command fails, and so does a story that ends with one, in every order of an `anyOrder`. Explorations owe nothing, since a random path asserts no effects.
 
 ## Failure messages
@@ -24,6 +24,9 @@ A failure is a `Story.StoryFailure` whose `problem` is one of these. `<what>` is
 | `<fn> gave two results for the same input` | The function read the clock, randomness or mutable state. | Pass that value in through the command or message. |
 | `invariant <name> does not hold` | A model or state breaks an invariant. `actual` shows it. | Fix `update`, `evolve` or `decide`, or the invariant. |
 | `invariant <name> threw: …` | The invariant itself threw. | Guard the predicate for every case of the model. |
+| `property <name> does not hold` | An exploration's property fails on a step ([explorations.md](explorations.md#properties)). `actual` shows the step it saw. | Fix the subject, or the property. |
+| `property <name> threw: …` | The property itself threw. | Guard the predicate for every step a path can take. |
+| `replies threw: …`, `emits threw: …` | An exploration's `replies` or `emits` threw for a pending command. | Give every command an answer list, empty for none. |
 | `a story starts with given(model)`, `a decision starts with given(state)` | The first step isn't `given`. | Start with `given`. |
 | `given(model) comes once, first`, `given(state) comes once, first` | A second `given`. | Split the tale, or use `restart()`. |
 | `the stored state differs from given` | `Decision.against` loaded a state under the key that isn't the `given` one. | Arrange the Store's rows first, or use a fresh key. |

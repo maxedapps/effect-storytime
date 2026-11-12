@@ -2,9 +2,9 @@
  * A Program's steps with every strict rule, shared by authored stories and explored paths. Each
  * step takes the state so far and gives the next, or fails with a Problem.
  */
-import { Effect, identity, Option } from 'effect';
+import { Effect, identity, Option, Schema } from 'effect';
 import type { Next, Program, Tagged } from '../../Program.ts';
-import { tagger } from '../../internal/canonical.ts';
+import { describer, tagger } from '../../internal/canonical.ts';
 import { attempt, holds, Problem, pure, role } from './check.ts';
 
 interface Pending<Command> {
@@ -22,22 +22,45 @@ export interface State<Model, Command> {
 	readonly cases: ReadonlyArray<string>;
 }
 
+/** One `update` a step ran: the model before, the message, and the model, commands and cancels it gave. */
+export interface Update<Model, Message, Command> {
+	readonly before: Model;
+	readonly message: Message;
+	readonly after: Model;
+	readonly commands: ReadonlyArray<Command>;
+	readonly cancels: ReadonlyArray<Command>;
+}
+
 const tagOf = (value: Tagged) => value._tag;
 
 /**
  * The steps of `program`. With `owing`, every produced command is owed an assertion; explored
- * paths assert no effects, so they owe none.
+ * paths assert no effects, so they owe none, and check their `properties` on every update instead.
  */
 export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 	program: Program<Model, Message, Command>,
-	owing: boolean
+	owing: boolean,
+	properties: Readonly<Record<string, (update: Update<Model, Message, Command>) => boolean>> = {}
 ) => {
 	const the = {
 		model: role(program.Model, 'the model'),
 		message: role(program.Message, 'the message'),
 		command: role(program.Command, 'the command')
 	};
-	const invariants = holds(program.invariants, the.model.show);
+	const invariants = holds('invariant', program.invariants, the.model.show);
+	const updates = holds(
+		'property',
+		properties,
+		describer(
+			Schema.Struct({
+				before: program.Model,
+				message: program.Message,
+				after: program.Model,
+				commands: Schema.Array(program.Command),
+				cancels: Schema.Array(program.Command)
+			})
+		)
+	);
 	const modelTag = tagger(program.Model);
 	const modelCase = (value: Model) =>
 		Option.match(modelTag(value), { onNone: () => [], onSome: (tag) => [`Model.${tag}`] });
@@ -48,17 +71,16 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 			.toSorted()
 			.join('\n');
 
-	const output = (next: Next<Model, Command>) =>
-		Effect.gen(function* () {
-			yield* the.model.valid(next.model);
-			yield* Effect.forEach(next.commands ?? [], the.command.valid);
-			yield* Effect.forEach(next.cancels ?? [], the.command.valid);
-			return JSON.stringify({
-				model: yield* the.model.key(next.model),
-				commands: yield* Effect.forEach(next.commands ?? [], the.command.key),
-				cancels: yield* Effect.forEach(next.cancels ?? [], the.command.key)
-			});
+	const output = Effect.fnUntraced(function* (next: Next<Model, Command>) {
+		yield* the.model.valid(next.model);
+		yield* Effect.forEach(next.commands ?? [], the.command.valid);
+		yield* Effect.forEach(next.cancels ?? [], the.command.valid);
+		return JSON.stringify({
+			model: yield* the.model.key(next.model),
+			commands: yield* Effect.forEach(next.commands ?? [], the.command.key),
+			cancels: yield* Effect.forEach(next.cancels ?? [], the.command.key)
 		});
+	});
 
 	const settle = Effect.fnUntraced(function* (
 		state: State<Model, Command>,
@@ -107,26 +129,36 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 			() => program.update(state.model, copy),
 			output
 		);
-		return yield* settle({ ...state, cases: [...state.cases, `Message.${tagOf(message)}`] }, next);
+		const settled = yield* settle(
+			{ ...state, cases: [...state.cases, `Message.${tagOf(message)}`] },
+			next
+		);
+		yield* updates({
+			before: state.model,
+			message: copy,
+			after: settled.model,
+			commands: next.commands ?? [],
+			cancels: next.cancels ?? []
+		});
+		return settled;
 	});
 
 	/**
 	 * Finds a pending command by its key. A command cancelled earlier in the same `anyOrder` gives
 	 * none, so its reply is skipped.
 	 */
-	const take = (state: State<Model, Command>, command: Command) =>
-		Effect.gen(function* () {
-			yield* the.command.valid(command);
-			const key = yield* the.command.key(command);
-			const found = state.pending.find((entry) => entry.key === key);
-			if (found) return Option.some(key);
-			if (Option.exists(state.cancelled, (keys) => keys.includes(key))) return Option.none();
-			return yield* new Problem({
-				message: `${the.command.show(command)} is not pending`,
-				expected: the.command.show(command),
-				actual: pendingLines(state.pending)
-			});
+	const take = Effect.fnUntraced(function* (state: State<Model, Command>, command: Command) {
+		yield* the.command.valid(command);
+		const key = yield* the.command.key(command);
+		const found = state.pending.find((entry) => entry.key === key);
+		if (found) return Option.some(key);
+		if (Option.exists(state.cancelled, (keys) => keys.includes(key))) return Option.none<string>();
+		return yield* new Problem({
+			message: `${the.command.show(command)} is not pending`,
+			expected: the.command.show(command),
+			actual: pendingLines(state.pending)
 		});
+	});
 
 	return {
 		pendingLines,
@@ -135,33 +167,31 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		 * The state a story starts from, once the model passes every check. It holds the model's
 		 * decoded copy, so a callback that mutates it never changes the story's own.
 		 */
-		start: (model: Model) =>
-			Effect.gen(function* () {
-				yield* the.model.valid(model);
-				const copy = yield* the.model.copy(model);
-				yield* invariants(copy);
-				return identity<State<Model, Command>>({
-					model: copy,
-					pending: [],
-					cancelled: Option.none(),
-					cases: modelCase(copy)
-				});
-			}),
+		start: Effect.fnUntraced(function* (model: Model) {
+			yield* the.model.valid(model);
+			const copy = yield* the.model.copy(model);
+			yield* invariants(copy);
+			return identity<State<Model, Command>>({
+				model: copy,
+				pending: [],
+				cancelled: Option.none(),
+				cases: modelCase(copy)
+			});
+		}),
 
 		send,
 
-		model: (state: State<Model, Command>, expected: Model) =>
-			Effect.gen(function* () {
-				yield* the.model.valid(expected);
-				if ((yield* the.model.key(expected)) !== (yield* the.model.key(state.model))) {
-					return yield* new Problem({
-						message: 'the model differs',
-						expected: the.model.show(expected),
-						actual: the.model.show(state.model)
-					});
-				}
-				return state;
-			}),
+		model: Effect.fnUntraced(function* (state: State<Model, Command>, expected: Model) {
+			yield* the.model.valid(expected);
+			if ((yield* the.model.key(expected)) !== (yield* the.model.key(state.model))) {
+				return yield* new Problem({
+					message: 'the model differs',
+					expected: the.model.show(expected),
+					actual: the.model.show(state.model)
+				});
+			}
+			return state;
+		}),
 
 		satisfies: (state: State<Model, Command>, label: string, check: (model: Model) => boolean) =>
 			Effect.flatMap(
@@ -177,20 +207,22 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 							)
 			),
 
-		commands: (state: State<Model, Command>, expected: ReadonlyArray<Command>) =>
-			Effect.gen(function* () {
-				yield* Effect.forEach(expected, the.command.valid);
-				const wanted = (yield* Effect.forEach(expected, the.command.key)).toSorted();
-				const actual = state.pending.map((entry) => entry.key).toSorted();
-				if (wanted.join('\n') !== actual.join('\n')) {
-					return yield* new Problem({
-						message: 'the pending commands differ',
-						expected: expected.map(the.command.show).toSorted().join('\n'),
-						actual: pendingLines(state.pending)
-					});
-				}
-				return { ...state, pending: state.pending.map((entry) => ({ ...entry, owed: false })) };
-			}),
+		commands: Effect.fnUntraced(function* (
+			state: State<Model, Command>,
+			expected: ReadonlyArray<Command>
+		) {
+			yield* Effect.forEach(expected, the.command.valid);
+			const wanted = (yield* Effect.forEach(expected, the.command.key)).toSorted();
+			const actual = state.pending.map((entry) => entry.key).toSorted();
+			if (wanted.join('\n') !== actual.join('\n')) {
+				return yield* new Problem({
+					message: 'the pending commands differ',
+					expected: expected.map(the.command.show).toSorted().join('\n'),
+					actual: pendingLines(state.pending)
+				});
+			}
+			return { ...state, pending: state.pending.map((entry) => ({ ...entry, owed: false })) };
+		}),
 
 		/** Completes a pending command and feeds its reply, if any. */
 		resolve: (state: State<Model, Command>, command: Command, reply: Option.Option<Message>) =>
@@ -229,23 +261,22 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 			),
 
 		/** Round-trips the model through JSON, drops every pending command and applies `resume`. */
-		restart: (state: State<Model, Command>) =>
-			Effect.gen(function* () {
-				const owed = state.pending.filter((entry) => entry.owed);
-				if (owed.length > 0) {
-					return yield* new Problem({
-						message: 'the restart drops commands no step asserted',
-						actual: pendingLines(owed)
-					});
-				}
-				const stored = yield* the.model.copy(state.model);
-				const next = yield* pure(
-					'resume',
-					the.model.key(stored),
-					() => program.resume(stored),
-					output
-				);
-				return yield* settle({ ...state, model: stored, pending: [] }, next);
-			})
+		restart: Effect.fnUntraced(function* (state: State<Model, Command>) {
+			const owed = state.pending.filter((entry) => entry.owed);
+			if (owed.length > 0) {
+				return yield* new Problem({
+					message: 'the restart drops commands no step asserted',
+					actual: pendingLines(owed)
+				});
+			}
+			const stored = yield* the.model.copy(state.model);
+			const next = yield* pure(
+				'resume',
+				the.model.key(stored),
+				() => program.resume(stored),
+				output
+			);
+			return yield* settle({ ...state, model: stored, pending: [] }, next);
+		})
 	};
 };

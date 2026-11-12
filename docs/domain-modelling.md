@@ -13,7 +13,7 @@ Everything else is plain Effect. [ADR 0003](../adrs/0003-lean-domain-library.md)
 | --- | --- |
 | Aggregate | A Decider plus a Store whose transaction protects what it read. There is no aggregate class. |
 | Command, event, rejection | `Schema.TaggedUnion`s. `handle` turns a rejection into the Effect's typed error. |
-| Invariant | A Decider's or Program's named predicates, checked by every tale and by `handle` before it saves. |
+| Invariant | A Decider's or Program's named predicates, checked by every tale, and by `handle` and a Loop before they save. |
 | Repository | A `Decider.Store` your app implements as a `Context.Service`, on one row or several tables. |
 | Process manager | A Program. Its model remembers what is under way, and its commands drive Deciders. |
 | Value object | A Schema with `Schema.brand` and checks, plus plain functions. |
