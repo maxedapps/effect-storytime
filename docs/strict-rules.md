@@ -1,6 +1,6 @@
 # Strict rules
 
-Every story, decision and explored path runs these rules at every step. They are built into `run`, so there is nothing to switch on ([ADR 0001](../adrs/0001-effect-native-story-library.md)).
+Every story, decision and explored path runs these rules at every step. They are built into `run`, so there is nothing to switch on ([ADR 0001](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0001-effect-native-story-library.md)).
 
 ## The rules
 

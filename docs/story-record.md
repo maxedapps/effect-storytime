@@ -23,7 +23,7 @@ A report is `{ "version": 3, "stories": [...] }`, one record per told tale. The 
 
 `failure` holds the `StoryFailure` without its title: `step`, `line`, `problem`, and optionally `expected`, `actual`, and for an exploration `counterexample` and `replay` ([explorations.md](explorations.md#running-and-failures)). A tale that failed with another error, such as a database error in `Decision.against`, has only `status: "failed"`.
 
-A passing story with an `anyOrder`, from [`test/fixtures/report.json`](../test/fixtures/report.json). Its two orders end alike; a story whose orders end apart passes too, unless a step after the `anyOrder` asserts the model, and its `finals` show each ending:
+A passing story with an `anyOrder`, from [`test/fixtures/report.json`](https://github.com/maxedapps/effect-storytime/blob/main/test/fixtures/report.json). Its two orders end alike; a story whose orders end apart passes too, unless a step after the `anyOrder` asserts the model, and its `finals` show each ending:
 
 ```json
 {
@@ -88,7 +88,7 @@ expect(failed).toEqual({
 
 ## Versions
 
-`version` changes whenever the record format does. Version 2 renamed a Decider's `Input` to `Command`, in its lines and its cases ([ADR 0003](../adrs/0003-lean-domain-library.md)). Version 3 renamed a failure's `message` to `problem` ([ADR 0004](../adrs/0004-readable-failures-and-bound-steps.md)). A tool that reads reports should decode with `StoryRecord.decode` and treat a decode failure as a report from another version.
+`version` changes whenever the record format does. Version 2 renamed a Decider's `Input` to `Command`, in its lines and its cases ([ADR 0003](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0003-lean-domain-library.md)). Version 3 renamed a failure's `message` to `problem` ([ADR 0004](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0004-readable-failures-and-bound-steps.md)). A tool that reads reports should decode with `StoryRecord.decode` and treat a decode failure as a report from another version.
 
 ## API
 

@@ -1,5 +1,5 @@
 // The membership Decider as docs/decider.md, docs/decisions.md and docs/explorations.md show it.
-import { describe, expect, layer } from '@effect/vitest';
+import { describe, expect, expectTypeOf, layer } from '@effect/vitest';
 import { Effect, Option, Result } from 'effect';
 import { Decider, Program } from 'effect-storytime';
 import { Decision, Exploration } from 'effect-storytime/testing';
@@ -15,8 +15,11 @@ import {
 	Granted,
 	later,
 	Manual,
+	type Membership,
 	membership,
 	Memberships,
+	NotActive,
+	type Rejection,
 	Revoke,
 	Revoked
 } from '../examples/membership.ts';
@@ -88,6 +91,46 @@ layer(Memberships.layer)('membership in its Store', (it) => {
 });
 // #endregion vitest
 
+// #region widening
+// A helper typed with the whole Rejection union widens the handler that calls it:
+// Revoke's calls could now fail with any rejection.
+const requireActiveWide = (current: Membership): Result.Result<Membership, Rejection> =>
+	current.active ? Result.succeed(current) : Result.fail(NotActive.make({}));
+// The fix: leave its return type inferred, so Revoke keeps only NotActive.
+const requireActive = (current: Membership) =>
+	current.active ? Result.succeed(current) : Result.fail(NotActive.make({}));
+
+const wide = Decider.make({
+	...membership,
+	decide: {
+		...membership.decide,
+		Revoke: (current) => Result.map(requireActiveWide(current), () => [Revoked.make({})])
+	}
+});
+const narrow = Decider.make({
+	...membership,
+	decide: {
+		...membership.decide,
+		Revoke: (current) => Result.map(requireActive(current), () => [Revoked.make({})])
+	}
+});
+const revokeWide = Decider.handle(wide, Memberships)('user-4', Revoke.make({}));
+const revoke = Decider.handle(narrow, Memberships)('user-4', Revoke.make({}));
+expectTypeOf<Effect.Error<typeof revokeWide>>().toEqualTypeOf<Rejection>();
+expectTypeOf<Effect.Error<typeof revoke>>().toEqualTypeOf<typeof NotActive.Type>();
+
+// The same for a helper around handle: one taking Command gives every handler's
+// rejections, one generic in the command keeps each call's own.
+const handleMembership = Decider.handle(membership, Memberships);
+const sendWide = (key: string, command: Command) =>
+	handleMembership(key, command).pipe(Effect.withSpan('membership'));
+const send = <C extends Command>(key: string, command: C) =>
+	handleMembership(key, command).pipe(Effect.withSpan('membership'));
+expectTypeOf<Effect.Error<ReturnType<typeof sendWide>>>().toEqualTypeOf<Rejection>();
+const revokeSent = send('user-4', Revoke.make({}));
+expectTypeOf<Effect.Error<typeof revokeSent>>().toEqualTypeOf<typeof NotActive.Type>();
+// #endregion widening
+
 layer(Memberships.layer)('Decider.handle', (it) => {
 	it.effect('commits the events and the state they reach, or fails with the rejection', () =>
 		Effect.gen(function* () {
@@ -109,6 +152,15 @@ layer(Memberships.layer)('Decider.handle', (it) => {
 			);
 			expect(yield* again).toBe(`active since ${at}`);
 			// #endregion handle
+		})
+	);
+
+	it.effect('keeps per-command types only through narrowly typed helpers', () =>
+		Effect.gen(function* () {
+			expect(yield* Effect.flip(revokeWide)).toEqual(NotActive.make({}));
+			expect(yield* Effect.flip(revoke)).toEqual(NotActive.make({}));
+			expect(yield* Effect.flip(sendWide('user-4', Revoke.make({})))).toEqual(NotActive.make({}));
+			expect(yield* Effect.flip(revokeSent)).toEqual(NotActive.make({}));
 		})
 	);
 

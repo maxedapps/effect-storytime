@@ -211,11 +211,11 @@ export default defineConfig({
 | [docs/recipes.md](docs/recipes.md) | A process manager that survives a crash, testing a database Store, fixing a counterexample. |
 | [docs/pitfalls.md](docs/pitfalls.md) | Type errors and failures that surprise. |
 
-The design decisions are in [`adrs/`](adrs).
+The design decisions are in [`adrs/`](https://github.com/maxedapps/effect-storytime/tree/main/adrs).
 
 ## Development
 
-`pnpm check` is the gate: formatting, lint, types, tests at 100% coverage, a 100% mutation score with Stryker and the build. Every TypeScript block in this README and in `docs/` is a region of a checked file, kept in sync by `test/snippets.test.ts`. [AGENTS.md](AGENTS.md) has the rest.
+`pnpm check` is the gate: formatting, lint, types, tests at 100% coverage, a 100% mutation score with Stryker and the build. Every TypeScript block in this README and in `docs/` is a region of a checked file, kept in sync by `test/snippets.test.ts`. [AGENTS.md](https://github.com/maxedapps/effect-storytime/blob/main/AGENTS.md) has the rest.
 
 ## License
 

@@ -51,11 +51,13 @@ The pages share a few example domains, all in `test/examples/` and `test/docs/`:
 
 ## Why it is built this way
 
-The ADRs in [`adrs/`](../adrs) record the design:
+The ADRs in [`adrs/`](https://github.com/maxedapps/effect-storytime/tree/main/adrs) record the design:
 
-- [0001](../adrs/0001-effect-native-story-library.md): tales are Effect values with strict rules built into every run, and the Vitest adapter is optional.
-- [0002](../adrs/0002-decider-explorations-and-covers.md): explorations of Deciders, a Decider's cases, and why `covers` counts only the subject's own tales.
-- [0003](../adrs/0003-lean-domain-library.md): a Decider is the command side and a Program the process manager, with no aggregate, repository or event store types. It also sets the Store contract.
-- [0004](../adrs/0004-readable-failures-and-bound-steps.md): failure messages that show the step, line and counterexample, and step builders bound to their subject (`Story.of`, `Decision.of`).
-- [0005](../adrs/0005-honest-contracts.md): one invariant contract for tales, `handle` and a Loop; every `anyOrder` order's final; exploration properties; the vitest entry; `Loop.join`.
-- [0006](../adrs/0006-a-loop-that-runs-a-process-to-the-end.md): a Loop that runs a process to the end: typed handler errors, `Loop.write`, a transactional `store`, `settled` and `Loop.run`.
+- [0001](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0001-effect-native-story-library.md): tales are Effect values with strict rules built into every run, and the Vitest adapter is optional.
+- [0002](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0002-decider-explorations-and-covers.md): explorations of Deciders, a Decider's cases, and why `covers` counts only the subject's own tales.
+- [0003](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0003-lean-domain-library.md): a Decider is the command side and a Program the process manager, with no aggregate, repository or event store types. It also sets the Store contract.
+- [0004](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0004-readable-failures-and-bound-steps.md): failure messages that show the step, line and counterexample, and step builders bound to their subject (`Story.of`, `Decision.of`).
+- [0005](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0005-honest-contracts.md): one invariant contract for tales, `handle` and a Loop; every `anyOrder` order's final; exploration properties; the vitest entry; `Loop.join`.
+- [0006](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0006-a-loop-that-runs-a-process-to-the-end.md): a Loop that runs a process to the end: typed handler errors, `Loop.write`, a transactional `store`, `settled` and `Loop.run`.
+- [0007](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0007-predicates-leave-their-input-alone.md): invariants, properties and `satisfies` checks only read their input, and a Loop runs identical commands once.
+- [0008](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0008-typed-results-per-command.md): `decide` is one handler per command tag, so `handle` types each call by its command's events and rejections.

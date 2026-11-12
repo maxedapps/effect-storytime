@@ -3,6 +3,7 @@
 ## Types
 
 - **`Message` or `Command` isn't a `Program.Cases`.** A Program's `Message` and `Command` must list their `cases`. A `Schema.TaggedStruct`, a `Schema.Union` of structs or a plain struct doesn't, so wrap it: `Schema.TaggedUnion({ Award: { ... } })`, or for `Schema.TaggedClass` cases `Schema.Union([Award, Revoke]).pipe(Schema.toTaggedUnion('_tag'))` ([domain-modelling.md](domain-modelling.md#rules-for-the-schemas)).
+- **`handle` gives every rejection of the Decider.** A helper typed with a whole union, such as one returning `Result<_, Rejection>` that a handler calls or one taking `Command` that calls `handle`, widens that command's types again. Leave its return type inferred and make it generic in the command ([decider.md](decider.md#keeping-the-types-narrow)).
 - **A Store's error type.** `Decider.Store<Key, State, Event, E>` defaults `E` to `never`. A database Store names its errors, such as `SqlError.SqlError | Schema.SchemaError`, and `handle` and `Decision.against` pass them on.
 - **A handler failure the Program should decide on.** A handler's typed error fails its command and the run: map the failures the Program decides on (a missing account, a refusal) to messages, and let only the ones that end the process through.
 - **A handler, store and write with different error types.** `Loop.make` and `Loop.run` infer one `E` for all of them, the union of their errors.

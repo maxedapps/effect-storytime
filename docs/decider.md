@@ -128,6 +128,51 @@ const again: Effect.Effect<string, never, Memberships> = handled(
 expect(yield* again).toBe(`active since ${at}`);
 ```
 
+### Keeping the types narrow
+
+A handler's inferred return type is its command's contract, so a type annotation that names a whole union widens it again. A helper the handler calls that is typed as returning `Rejection` makes every call of that command fail with any rejection; a helper around `handle` that takes `Command` gives every handler's events and rejections. Leave a helper's return type inferred, or name the exact cases, and make a helper that takes a command generic in it (`<C extends Command>(key, command: C)`).
+
+<!-- snippet: test/docs/membership.test.ts#widening -->
+```ts
+// A helper typed with the whole Rejection union widens the handler that calls it:
+// Revoke's calls could now fail with any rejection.
+const requireActiveWide = (current: Membership): Result.Result<Membership, Rejection> =>
+	current.active ? Result.succeed(current) : Result.fail(NotActive.make({}));
+// The fix: leave its return type inferred, so Revoke keeps only NotActive.
+const requireActive = (current: Membership) =>
+	current.active ? Result.succeed(current) : Result.fail(NotActive.make({}));
+
+const wide = Decider.make({
+	...membership,
+	decide: {
+		...membership.decide,
+		Revoke: (current) => Result.map(requireActiveWide(current), () => [Revoked.make({})])
+	}
+});
+const narrow = Decider.make({
+	...membership,
+	decide: {
+		...membership.decide,
+		Revoke: (current) => Result.map(requireActive(current), () => [Revoked.make({})])
+	}
+});
+const revokeWide = Decider.handle(wide, Memberships)('user-4', Revoke.make({}));
+const revoke = Decider.handle(narrow, Memberships)('user-4', Revoke.make({}));
+expectTypeOf<Effect.Error<typeof revokeWide>>().toEqualTypeOf<Rejection>();
+expectTypeOf<Effect.Error<typeof revoke>>().toEqualTypeOf<typeof NotActive.Type>();
+
+// The same for a helper around handle: one taking Command gives every handler's
+// rejections, one generic in the command keeps each call's own.
+const handleMembership = Decider.handle(membership, Memberships);
+const sendWide = (key: string, command: Command) =>
+	handleMembership(key, command).pipe(Effect.withSpan('membership'));
+const send = <C extends Command>(key: string, command: C) =>
+	handleMembership(key, command).pipe(Effect.withSpan('membership'));
+expectTypeOf<Effect.Error<ReturnType<typeof sendWide>>>().toEqualTypeOf<Rejection>();
+const revokeSent = send('user-4', Revoke.make({}));
+expectTypeOf<Effect.Error<typeof revokeSent>>().toEqualTypeOf<typeof NotActive.Type>();
+```
+
 ### A broken invariant
 
 A state that breaks an invariant is a bug in `decide` or `evolve`, so `handle` dies with the defect `Program.InvariantBroken { invariant, state }` inside the transaction, and nothing is saved. Programs and Deciders share this one defect. `state` is the state as a line, in canonical JSON. An invariant that changes the state it judges dies the same way with `Program.InvariantChanged { invariant, before, after }`. Tales catch this before it reaches `handle` ([strict-rules.md](strict-rules.md)).
@@ -171,7 +216,7 @@ A `Decider.Store<Key, State, Event, E = never>` is where a Decider's states live
 - **Round trip.** `load` gives back exactly what `save` stored.
 - **Commit.** `transaction` is the outermost transaction, so `handle` resolves only after its commit. Don't run `handle` inside another transaction: a nested one keeps the outer isolation and commits only with it.
 
-A Store may span one row or several tables. The state is the truth; there is no event store ([ADR 0003](../adrs/0003-lean-domain-library.md)).
+A Store may span one row or several tables. The state is the truth; there is no event store ([ADR 0003](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0003-lean-domain-library.md)).
 
 ### A Store on `effect/sql`
 

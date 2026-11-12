@@ -27,7 +27,7 @@ A tale touches a case when it sends, produces or reaches it. A story touches the
 
 `Tale.covers(subject, tales)` runs every tale and fails with `Uncovered { missing }` unless the tales together touch every case of the subject. A failing tale fails `covers` with its `StoryFailure`.
 
-Only the subject's own tales count. A tale about another Program or Decider touches none of this subject's cases, even when the case names match ([ADR 0002](../adrs/0002-decider-explorations-and-covers.md)). So pass a Program's stories and explorations to its `covers`, and a Decider's decisions and explorations to its own.
+Only the subject's own tales count. A tale about another Program or Decider touches none of this subject's cases, even when the case names match ([ADR 0002](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0002-decider-explorations-and-covers.md)). So pass a Program's stories and explorations to its `covers`, and a Decider's decisions and explorations to its own.
 
 An `Uncovered` failure names a case no tale reaches. Add a story or decision for it, or widen an exploration's `send`, `replies` or `given`. A case that nothing can reach is dead code: remove it from the Schema.
 
