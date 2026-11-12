@@ -1,6 +1,6 @@
 {
 	"name": "effect-storytime",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "Lean domain modelling for Effect 4: Deciders and Programs as pure state machines, told and checked as strict stories.",
 	"keywords": [
 		"ddd",
