@@ -9,6 +9,10 @@
 		"moduleDetection": "force",
 		"moduleResolution": "Bundler",
 		"noEmit": true,
+		"paths": {
+			"effect-storytime": ["./src/index.ts"],
+			"effect-storytime/testing": ["./src/testing/index.ts"]
+		},
 		"noFallthroughCasesInSwitch": true,
 		"noImplicitOverride": true,
 		"noImplicitReturns": true,
@@ -22,7 +26,7 @@
 		"plugins": [
 			{
 				"name": "@effect/language-service",
-				"allowedUnstableApis": ["@effect/vitest", "effect/Arbitrary"]
+				"allowedUnstableApis": ["@effect/vitest", "effect/Arbitrary", "effect/sql"]
 			}
 		]
 	},

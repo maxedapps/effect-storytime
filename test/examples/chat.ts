@@ -1,8 +1,9 @@
 // A chat shaped like infinite's chat.svelte.ts: one question at a time, a streamed answer, a
 // daily limit and refusals.
 import { Schema } from 'effect';
-import { Program } from '../../src/index.ts';
+import { Program } from 'effect-storytime';
 
+// #region schemas
 const Turn = Schema.Struct({ id: Schema.String, question: Schema.String, answer: Schema.String });
 
 export const Chat = Schema.TaggedUnion({
@@ -36,7 +37,9 @@ export type Command = typeof Command.Type;
 
 const { Ready, Asking, Limited, SignedOut } = Chat.cases;
 const { Ask, SaveTurn } = Command.cases;
+// #endregion schemas
 
+// #region update
 const ask = (chat: Chat, asked: typeof Message.cases.Asked.Type) =>
 	Chat.match(chat, {
 		Ready: (ready) =>
@@ -97,7 +100,9 @@ export const update = (chat: Chat, message: Message): Program.Next<Chat, Command
 					}
 				: { model: chat }
 	});
+// #endregion update
 
+// #region program
 export const chat = Program.make({
 	Model: Chat,
 	Message,
@@ -115,5 +120,6 @@ export const chat = Program.make({
 		leftIsNeverNegative: (model) => !('left' in model) || model.left >= 0
 	}
 });
+// #endregion program
 
 export const ready = (left: number) => Ready.make({ turns: [], left });

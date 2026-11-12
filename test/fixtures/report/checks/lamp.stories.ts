@@ -1,5 +1,5 @@
 import { Arbitrary, Schema } from 'effect';
-import { Exploration, Vitest } from '../../../../src/testing/index.ts';
+import { Exploration, Vitest } from 'effect-storytime/testing';
 import * as Lamp from '../../../examples/lamp.ts';
 
 Vitest.stories(

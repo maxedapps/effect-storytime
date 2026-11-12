@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Result, Schema } from 'effect';
-import { Decider } from '../src/index.ts';
-import { Decision, Exploration, Story, Tale } from '../src/testing/index.ts';
+import { Decider } from 'effect-storytime';
+import { Decision, Exploration, Story, Tale } from 'effect-storytime/testing';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import { membership, none, NotActive, Revoke } from './examples/membership.ts';

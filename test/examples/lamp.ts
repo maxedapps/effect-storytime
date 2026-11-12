@@ -1,7 +1,7 @@
 // A lamp whose model uses codecs (a bit for a boolean, an ISO string for a date) and whose
 // variants break one strict rule each.
 import { Schema } from 'effect';
-import { Program } from '../../src/index.ts';
+import { Program } from 'effect-storytime';
 
 export const Lamp = Schema.Struct({
 	on: Schema.BooleanFromBit,

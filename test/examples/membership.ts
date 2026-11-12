@@ -1,8 +1,9 @@
 // A membership row shaped like infinite's: its state stores `active` as a bit, and a Store service
 // keeps rows encoded in memory and logs every call, so tests see what `handle` did.
 import { Context, Effect, Layer, Option, Ref, Result, Schema } from 'effect';
-import { Decider } from '../../src/index.ts';
+import { Decider } from 'effect-storytime';
 
+// #region schemas
 const Source = Schema.Literals(['manual', 'teachable']);
 
 export const Membership = Schema.Struct({
@@ -36,7 +37,9 @@ export type Rejection = typeof Rejection.Type;
 export const { Grant, Check, Revoke } = Command.cases;
 export const { Granted, Checked, Revoked } = Event.cases;
 export const { AlreadyActive, NotActive, Manual } = Rejection.cases;
+// #endregion schemas
 
+// #region decider
 const decide = (
 	current: Membership,
 	command: Command
@@ -73,6 +76,7 @@ export const membership = Decider.make({
 	evolve,
 	invariants: { checkedWhenActive: (current) => !current.active || current.checkedAt !== null }
 });
+// #endregion decider
 
 /** The membership with another `decide`, keeping the rest. */
 export const variant = (

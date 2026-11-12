@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Effect, Exit, Option } from 'effect';
-import { Decider } from '../src/index.ts';
+import { Decider } from 'effect-storytime';
 import {
 	at,
 	Check,

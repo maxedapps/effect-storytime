@@ -14,8 +14,13 @@ A lean Effect 4 domain library with strict story tests (README.md). Design decis
 
 - Idiomatic Effect 4 at the version in the pnpm catalog; check APIs in its source, not memory.
 - Two entries, each a namespace per public module: the domain in `src/index.ts` (modules in `src/`, internals in `src/internal/`) and the tales with the Vitest adapter in `src/testing/index.ts` (internals in `src/testing/internal/`). The domain imports nothing from `testing`; an oxlint `no-restricted-imports` rule enforces it.
+- Tests import the public API by package name (`effect-storytime`, `effect-storytime/testing`), as consumers do; tsconfig `paths` point both at `src`.
 - Examples shared by tests live in `test/examples/`, modelled on infinite's Chat, Conversation and membership code.
-- A change to the API or the story record updates README.md; a record format change bumps `StoryReport`'s `version`.
+
+## Docs
+
+- README.md pitches both libraries and links into `docs/`, one topic per file, written for coding agents that use the library. A change to the API or the story record updates README.md and the matching `docs/` page (`docs/README.md` maps topics to pages); a record format change also bumps `StoryReport`'s `version`.
+- Every `ts` block in README.md and `docs/` follows a `<!-- snippet: <file>#<region> -->` marker and equals the `// #region <region>` of that file in `test/examples/` or `test/docs/`, so tsc, oxlint and Vitest check it. Change the code, then rewrite the blocks with `pnpm vitest run test/snippets.test.ts -u`; `test/snippets.test.ts` fails on any drift or unmarked block.
 
 ## Landing
 

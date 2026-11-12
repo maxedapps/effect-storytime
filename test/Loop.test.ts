@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Deferred, Effect, Fiber, Option, Queue, Ref, Stream } from 'effect';
-import { Loop } from '../src/index.ts';
+import { Loop } from 'effect-storytime';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Fetch from './examples/fetch.ts';
 

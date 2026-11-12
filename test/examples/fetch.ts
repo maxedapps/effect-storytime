@@ -1,7 +1,7 @@
 // A fetch that retries itself and ends by cancelling itself, each time starting a second
 // command: the replies Chat's stream completion and Conversation's continuations depend on.
 import { Schema } from 'effect';
-import { Program } from '../../src/index.ts';
+import { Program } from 'effect-storytime';
 
 const Params = Schema.Record(Schema.String, Schema.String);
 

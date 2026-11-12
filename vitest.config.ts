@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+	// Tests import `effect-storytime` as consumers do; tsconfig's paths point it at `src`.
+	resolve: { tsconfigPaths: true },
 	test: {
 		include: ['test/**/*.test.ts'],
 		coverage: {

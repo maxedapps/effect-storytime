@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Effect, Result, Schema } from 'effect';
-import { Decider } from '../src/index.ts';
-import { Decision, Story } from '../src/testing/index.ts';
+import { Decider } from 'effect-storytime';
+import { Decision, Story } from 'effect-storytime/testing';
 import {
 	AlreadyActive,
 	at,

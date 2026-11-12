@@ -1,7 +1,7 @@
 // A conversation shaped like infinite's Conversation Durable Object: a turn runs in steps, a
 // restart redoes the running step, and a recall cancels it.
 import { Schema } from 'effect';
-import { Program } from '../../src/index.ts';
+import { Program } from 'effect-storytime';
 
 export const Phase = Schema.TaggedUnion({
 	Idle: {},
