@@ -1,11 +1,13 @@
 // #region quickstart
 // seats.test.ts: tales about the domain, told as Vitest tests.
 import { describe } from '@effect/vitest';
-import { Decision, Story, Vitest } from 'effect-storytime/testing';
-import { Event, Form, Message, Rejection, Request, Command, form, seats } from './seats.ts';
+import { Arbitrary } from 'effect';
+import { Decision, Exploration, Story, Vitest } from 'effect-storytime/testing';
+import { Command, Event, Form, Message, Rejection, Request, form, seats } from './seats.ts';
 
 const { Book, Cancel } = Command.cases;
 const { Booked, Cancelled } = Event.cases;
+const { Submitted, Succeeded, Failed } = Message.cases;
 const { BookSeat } = Request.cases;
 
 // A decision: given a state, each command is accepted with its events or rejected.
@@ -27,13 +29,24 @@ const books = Story.make(
 	'a submitted form books a seat',
 	form,
 	Story.given(Form.cases.Editing.make({})),
-	Story.send(Message.cases.Submitted.make({ guest: 'ada' })),
+	Story.send(Submitted.make({ guest: 'ada' })),
 	Story.commands(BookSeat.make({ guest: 'ada' })),
-	Story.resolve(BookSeat.make({ guest: 'ada' }), Message.cases.Succeeded.make({})),
+	Story.resolve(BookSeat.make({ guest: 'ada' }), Succeeded.make({})),
 	Story.model(Form.cases.Done.make({ guest: 'ada' }))
 );
 
+// An exploration: 100 random paths of messages, replies and restarts, each checked with the
+// strict rules (Schemas, purity, JSON round trips, invariants). A failure shrinks to a short story.
+const anyPath = Exploration.make('any submission leaves the form valid', form, {
+	given: Arbitrary.Constant(Form.cases.Editing.make({})),
+	// The messages a pending BookSeat may answer with.
+	replies: () => [Succeeded.make({}), Failed.make({ reason: 'sold out' })]
+});
+
 describe('seats', () => {
-	Vitest.stories(sellsOut, books);
+	// One test per tale, named by its title.
+	Vitest.stories(sellsOut, books, anyPath);
+	// One test: the form's tales together send, produce or reach every case it has.
+	Vitest.covers(form, [books, anyPath]);
 });
 // #endregion quickstart
