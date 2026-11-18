@@ -24,10 +24,10 @@ Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The 
 | [loop.md](loop.md) | run a Program's commands through the app's handlers, to the end or for as long as it lives, and commit its model with its writes |
 | [stories.md](stories.md) | test a Program step by step |
 | [decisions.md](decisions.md) | test a Decider, in memory or through its real Store |
-| [explorations.md](explorations.md) | check random paths through a Program or a Decider |
-| [strict-rules.md](strict-rules.md) | need to know what every tale checks, or read a failure message |
-| [tales-and-covers.md](tales-and-covers.md) | run any tale, list a subject's cases or require every case to be touched |
-| [vitest.md](vitest.md) | register tales as tests and write the story record |
+| [explorations.md](explorations.md) | check random paths through a Program or a Decider, or fresh ones on demand |
+| [strict-rules.md](strict-rules.md) | need to know what every tale checks and what it can't, or read a failure message |
+| [tales-and-covers.md](tales-and-covers.md) | run any tale, list a subject's cases, require every case to be touched or prove each invariant can fail |
+| [vitest.md](vitest.md) | register tales as tests, group them by rule and write the story record |
 | [story-record.md](story-record.md) | read the JSON report a test run writes |
 | [recipes.md](recipes.md) | build a process manager that drives a Decider and survives a crash |
 | [pitfalls.md](pitfalls.md) | hit a type error or a failure you don't understand |
@@ -61,3 +61,4 @@ The ADRs in [`adrs/`](https://github.com/maxedapps/effect-storytime/tree/main/ad
 - [0006](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0006-a-loop-that-runs-a-process-to-the-end.md): a Loop that runs a process to the end: typed handler errors, `Loop.write`, a transactional `store`, `settled` and `Loop.run`.
 - [0007](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0007-predicates-leave-their-input-alone.md): invariants, properties and `satisfies` checks only read their input, and a Loop runs identical commands once.
 - [0008](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0008-typed-results-per-command.md): `decide` is one handler per command tag, so `handle` types each call by its command's events and rejections.
+- [0009](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0009-invariants-that-break-and-fresh-seeds.md): `breaks` proves each invariant can fail, and `STORYTIME_SEED` and `STORYTIME_RUNS` explore fresh paths on demand.

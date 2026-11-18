@@ -22,27 +22,34 @@ describe('chat', () => {
 | --- | --- |
 | `stories(...tales)` | Registers one `it.effect` test per tale, named by its title. A failing tale fails its test with the `StoryFailure`. |
 | `covers(subject, tales)` | Registers one test, named `its tales touch every case`, that runs `Tale.covers` ([tales-and-covers.md](tales-and-covers.md)). |
+| `breaks(subject, states)` | Registers one test, named `each invariant breaks alone`, that runs `Tale.breaks`: each invariant must break on the state given for it, and only that invariant ([tales-and-covers.md](tales-and-covers.md#breaks)). |
 | `tell(ctx, tale, run?)` | Runs a tale inside your own `it.effect`, records it in the test's meta and fails the test when it fails. Pass `run` when the tale needs services. |
 
-`covers` always uses the same test name, so give each subject its own `describe` when one file covers several.
+`covers` and `breaks` always use the same test names, so give each subject its own `describe` when one file covers several.
 
-## Tales that need services
+## One describe per rule
 
-`Decision.against` needs the Store service, so it runs inside `layer(...)` from `@effect/vitest`, and `Vitest.tell` records it under the decision:
+Group a subject's tales by the rule they pin down: one `describe` per rule, named by it, holding the rule's happy path and its rejections or error cases. A failing test then names the rule it broke, and a rule with no `describe` stands out as untested. The subject's `covers` stays at the top, since it counts all of its tales:
 
-<!-- snippet: test/docs/membership.test.ts#vitest -->
+<!-- snippet: test/docs/membership.test.ts#rules -->
 ```ts
+// One describe per rule, holding every tale about it, so a failing test names the rule it broke.
 describe('membership', () => {
-	Vitest.stories(lifecycle, checks, manual, holds);
+	describe('a membership is granted once and revoked once', () => {
+		Vitest.stories(lifecycle);
+	});
+	describe('a check changes only what it finds changed', () => {
+		// The rule's rejection sits beside its happy path.
+		Vitest.stories(checks, manual);
+	});
+	describe('an active membership has been checked', () => {
+		// The invariant can fail, and no path of commands breaks it.
+		Vitest.breaks(membership, {
+			checkedWhenActive: { source: 'teachable', active: true, checkedAt: null }
+		});
+		Vitest.stories(holds);
+	});
 	Vitest.covers(membership, [lifecycle, checks, manual, holds]);
-});
-
-// The same decision through `handle`'s transaction on a Store. Here the Store keeps rows in
-// memory; an app passes its database layer.
-layer(Memberships.layer)('membership in its Store', (it) => {
-	it.effect('a membership is granted once and revoked once', (ctx) =>
-		Vitest.tell(ctx, lifecycle, Decision.against(lifecycle, Memberships, 'user-1'))
-	);
 });
 ```
 
@@ -68,7 +75,7 @@ export default defineConfig({
 | --- | --- | --- |
 | `outputFile` | `stories.json` | Where to write the report, relative to the Vitest root. Missing folders are created. |
 
-Every run rewrites the file, and the same tests give the same bytes, so the file can be committed and diffed. Only tales told through `stories` or `tell` are recorded. `covers` records nothing, and neither does a test that calls `Story.run` itself.
+Every run rewrites the file, and the same tests give the same bytes, so the file can be committed and diffed. Only tales told through `stories` or `tell` are recorded. `covers` and `breaks` record nothing, and neither does a test that calls `Story.run` itself.
 
 ## API
 
@@ -76,6 +83,7 @@ Every run rewrites the file, and the same tests give the same bytes, so the file
 | --- | --- | --- |
 | `stories(...tales)` | `void` | One test per tale. |
 | `covers(subject, tales)` | `void` | One coverage test. |
+| `breaks(subject, states)` | `void` | One test that each invariant can fail. |
 | `tell(ctx, tale, run?)` | `Effect<Reached, StoryFailure \| E, R>` | Runs and records a tale in your own test. |
 | `Reporter` | class | `new Vitest.Reporter({ outputFile? })`, a Vitest reporter. |
 | `ReporterOptions` | interface | `{ outputFile? }`. |

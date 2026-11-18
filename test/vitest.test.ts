@@ -50,7 +50,7 @@ const logs = Lamp.variant((current, message) => ({
 	commands: [Lamp.Log.make({ text: 'switched' })]
 }));
 
-describe('stories and covers', () => {
+describe('stories, covers and breaks', () => {
 	Vitest.stories(stops, switches, revokes);
 	Vitest.covers(logs, [
 		Story.make(
@@ -61,14 +61,16 @@ describe('stories and covers', () => {
 			lamp.resolve(Lamp.Log.make({ text: 'switched' }))
 		)
 	]);
+	Vitest.breaks(Lamp.lamp, { countIsSmall: { ...Lamp.off, count: 10 } });
 
-	it('register one test per tale and one for the cases', (ctx) => {
+	it('register one test per tale, one for the cases and one for the invariants', (ctx) => {
 		expect(ctx.task.suite?.tasks.map((task) => task.name)).toEqual([
 			'a question is stopped',
 			'the lamp switches',
 			'only an active membership is revoked',
 			'its tales touch every case',
-			'register one test per tale and one for the cases'
+			'each invariant breaks alone',
+			'register one test per tale, one for the cases and one for the invariants'
 		]);
 	});
 });

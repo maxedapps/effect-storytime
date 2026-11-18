@@ -80,6 +80,14 @@ export const covers = <
 	it.effect('its tales touch every case', () => Tale.covers(subject, tales));
 };
 
+/** Registers one test requiring each invariant of a Program or a Decider to break on its given state alone. */
+export const breaks = <Value, Name extends string>(
+	subject: Tale.Judged<Value, Name>,
+	states: Tale.Breaking<NoInfer<Value>, NoInfer<Name>>
+): void => {
+	it.effect('each invariant breaks alone', () => Tale.breaks(subject, states));
+};
+
 export interface ReporterOptions {
 	/** Where to write the report, relative to the Vitest root; `stories.json` by default. */
 	readonly outputFile?: string;

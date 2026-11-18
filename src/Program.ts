@@ -26,7 +26,9 @@ export interface Next<Model, Command> {
  * before it keeps it, `Decider.handle` a Decider's on the state each command reaches, and every
  * tale checks them at each step.
  */
-export type Invariants<Model> = Readonly<Record<string, (model: Model) => boolean>>;
+export type Invariants<Model, Name extends string = string> = Readonly<
+	Record<Name, (model: Model) => boolean>
+>;
 
 /**
  * The defect a Loop or `Decider.handle` dies with when a model or state breaks an invariant. It
@@ -57,31 +59,50 @@ export class InvariantChanged extends Schema.TaggedError<InvariantChanged>()('In
 	}
 }
 
-export interface Program<Model, Message extends Tagged, Command extends Tagged> {
+export interface Program<
+	Model,
+	Message extends Tagged,
+	Command extends Tagged,
+	/** The names of its invariants. */
+	Name extends string = string
+> {
 	readonly Model: Schema.Codec<Model, unknown>;
 	readonly Message: Cases<Message>;
 	readonly Command: Cases<Command>;
 	readonly update: (model: Model, message: Message) => Next<Model, Command>;
 	/** What to redo after a restart, from the stored model alone. */
 	readonly resume: (model: Model) => Next<Model, Command>;
-	readonly invariants: Invariants<Model>;
+	readonly invariants: Invariants<Model, Name>;
 }
 
-export interface Definition<Model, Message extends Tagged, Command extends Tagged> {
+export interface Definition<
+	Model,
+	Message extends Tagged,
+	Command extends Tagged,
+	Name extends string
+> {
 	readonly Model: Schema.Codec<Model, unknown>;
 	readonly Message: Cases<Message>;
 	readonly Command: Cases<Command>;
 	readonly update: (model: Model, message: Message) => Next<Model, Command>;
 	readonly resume?: (model: Model) => Next<Model, Command>;
-	readonly invariants?: Invariants<Model>;
+	readonly invariants?: Invariants<Model, Name>;
 }
 
 const unchanged = <Model>(model: Model) => ({ model });
 
-export const make = <Model, Message extends Tagged, Command extends Tagged>(
-	definition: Definition<Model, Message, Command>
-): Program<Model, Message, Command> => ({
+export const make = <
+	Model,
+	Message extends Tagged,
+	Command extends Tagged,
+	Name extends string = never
+>(
+	definition: Definition<Model, Message, Command, Name>
+): Program<Model, Message, Command, Name> => ({
 	...definition,
 	resume: definition.resume ?? unchanged,
-	invariants: definition.invariants ?? {}
+	// SAFETY: `Name` is inferred from the invariants given, so a definition without any has none
+	// to name (`never`), and the empty record holds all of them.
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't tie a missing property to `Name`
+	invariants: definition.invariants ?? ({} as Invariants<Model, Name>)
 });

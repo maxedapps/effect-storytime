@@ -128,6 +128,7 @@ export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailu
 			counterexample === undefined
 				? [`step ${step}: ${line}`]
 				: [
+						line,
 						`step ${step} of the counterexample:`,
 						...counterexample.map((told, index) =>
 							index + 1 === step ? `> ${index + 1} ${told}` : `  ${index + 1} ${told}`

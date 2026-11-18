@@ -7,11 +7,13 @@
 import {
 	Arbitrary,
 	Array as Arr,
+	Config,
 	Data,
 	Effect,
 	Match,
 	Option,
 	Predicate,
+	Random,
 	Ref,
 	Schema
 } from 'effect';
@@ -41,7 +43,10 @@ interface Settings {
 	readonly runs?: number;
 	/** The most actions a path takes; 30 by default. */
 	readonly steps?: number;
-	/** The seed paths come from; the title by default, so every run checks the same paths. */
+	/**
+	 * The seed paths come from; the title by default, so every run checks the same paths.
+	 * `STORYTIME_SEED` and `STORYTIME_RUNS` override it and `runs` when an exploration is checked.
+	 */
 	readonly seed?: string | number;
 }
 
@@ -147,8 +152,13 @@ export const decisions = <State, Command extends Tagged, Event, Rejection>(
 		decisions
 	);
 
-const summary = (exploration: Exploration) =>
-	`explore ${exploration.runs} runs of up to ${exploration.steps} steps, seed ${JSON.stringify(exploration.seed)}${exploration.restarts ? ', with restarts' : ''}`;
+const summary = ({
+	runs,
+	steps,
+	seed,
+	restarts
+}: Pick<Exploration, 'runs' | 'steps' | 'seed' | 'restarts'>) =>
+	`explore ${runs} runs of up to ${steps} steps, seed ${JSON.stringify(seed)}${restarts ? ', with restarts' : ''}`;
 
 /** Renders an exploration as its one line; a failure's counterexample is a tale's lines. */
 export const lines = (exploration: Exploration): ReadonlyArray<string> => [summary(exploration)];
@@ -313,7 +323,27 @@ export interface Explored {
 }
 
 /**
- * Checks `runs` generated paths. A failure carries the shrunk path as a story's lines, its
+ * Overrides of every exploration's settings when it is checked, read through `Config`: from the
+ * environment unless another `ConfigProvider` is given. `STORYTIME_SEED` is `random`, a fresh seed
+ * for each check, or the integer seed a failure printed; `STORYTIME_RUNS` is how many paths to check.
+ */
+const overrides = Config.all({
+	seed: Config.option(
+		Config.schema(Schema.Union([Schema.Literal('random'), Schema.Int]), 'STORYTIME_SEED')
+	),
+	runs: Config.option(Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), 'STORYTIME_RUNS'))
+});
+
+/** The seed to check with: the override's, a fresh one for `random`, or the exploration's own. */
+const seeded = (exploration: Exploration, seed: Option.Option<'random' | number>) =>
+	Option.match(seed, {
+		onNone: () => Effect.succeed(exploration.seed),
+		onSome: (chosen) => (chosen === 'random' ? Random.nextInt : Effect.succeed(chosen))
+	});
+
+/**
+ * Checks `runs` generated paths, or as many as `STORYTIME_RUNS` says, from the exploration's seed or
+ * `STORYTIME_SEED`'s; an invalid override dies. A failure carries the shrunk path as a story's lines, its
  * counterexample, with `step` numbering the line that failed, and a `replay` token that checks
  * just that path again.
  */
@@ -322,6 +352,13 @@ export const check = Effect.fnUntraced(function* (
 	options?: { readonly replay?: Arbitrary.Replay }
 ): Effect.fn.Return<Explored, Story.StoryFailure> {
 	const { title } = exploration;
+	const chosen = yield* Effect.orDie(overrides);
+	const settings = {
+		runs: Option.getOrElse(chosen.runs, () => exploration.runs),
+		steps: exploration.steps,
+		seed: yield* seeded(exploration, chosen.seed),
+		restarts: exploration.restarts
+	};
 	const seen = yield* Ref.make<ReadonlyArray<string>>([]);
 	const result = yield* Arbitrary.checkEffect(
 		exploration.walks,
@@ -331,13 +368,13 @@ export const check = Effect.fnUntraced(function* (
 				Effect.as(true)
 			),
 		{
-			runs: exploration.runs,
-			size: exploration.steps,
-			seed: exploration.seed,
+			runs: settings.runs,
+			size: settings.steps,
+			seed: settings.seed,
 			replay: options?.replay
 		}
 	);
-	const line = summary(exploration);
+	const line = summary(settings);
 	return yield* Match.value(result).pipe(
 		Match.tag('Passed', ({ runs }) =>
 			Effect.map(Ref.get(seen), (cases): Explored => ({ runs, cases: cases.toSorted() }))

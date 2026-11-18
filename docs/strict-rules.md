@@ -45,3 +45,13 @@ A failure is a `Story.StoryFailure` whose `problem` is one of these. `<what>` is
 | `accepted(...) comes right after a when`, `rejected(...) comes right after a when` | An outcome without its `when`. | |
 
 Inside an `anyOrder`, a story's message starts with `in order <line numbers>: `, naming the order that failed.
+
+## Where tales stop
+
+Tales check rules: what a Decider decides, what a Program asks for, and that every value along the way is valid, pure and JSON-safe. They run the subject in memory, so they don't check:
+
+- **Wiring**: that a handler calls the right service, a route reaches `handle`, or a layer provides the Store the app expects. Test it with the app's own tests against its harness.
+- **Real atomicity**: that the Store's transaction commits a state together with its writes, or that two writers on one key exclude each other. `Decision.against` runs a decision through the real Store, but only one writer at a time; test concurrent writes against the database.
+- **Fiber races**: the order in which a Loop's command fibers finish, interruption mid-write or a timeout. An `anyOrder` story covers the orders a Program accepts its replies in, not the scheduling that produces them; test those with Effect's `TestClock` or on a stage.
+
+Mutation testing (Stryker, say) shows where the tales a subject has stop short: a mutant that survives every tale is a rule none of them pins down.

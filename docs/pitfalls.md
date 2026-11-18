@@ -7,6 +7,7 @@
 - **A Store's error type.** `Decider.Store<Key, State, Event, E>` defaults `E` to `never`. A database Store names its errors, such as `SqlError.SqlError | Schema.SchemaError`, and `handle` and `Decision.against` pass them on.
 - **A handler failure the Program should decide on.** A handler's typed error fails its command and the run: map the failures the Program decides on (a missing account, a refusal) to messages, and let only the ones that end the process through.
 - **A handler, store and write with different error types.** `Loop.make` and `Loop.run` infer one `E` for all of them, the union of their errors.
+- **`breaks` takes any names.** A subject typed by hand, such as `Program.Program<Model, Message, Command>`, has `string` for its invariant names, so a missing state compiles and fails with `no model given`. Pass the value `make` returned, whose type names each invariant.
 
 ## Failing tales
 
@@ -27,12 +28,14 @@
 - **A wide `send` explores little.** Random strings rarely meet: an `Answered` for turn `"x7#"` never matches the pending `Ask`. Generate from a few fixed values so messages about the same thing meet.
 - **`replies` decide what completes.** A command with no replies stays pending forever on that path. Give each streaming command its `emits`, too.
 - **`Arbitrary` has no `oneOf`.** Generate a `Schema.Literals` and `Arbitrary.map` it to the values.
+- **A failure only with `STORYTIME_SEED=random`.** The fresh seed found a path the default seed never takes. The failure's line names the seed: rerun with it, then copy the counterexample into a story or decision so the path stays tested ([explorations.md](explorations.md#fresh-seeds-and-more-runs)).
 
 ## Coverage
 
 - **Only the subject's own tales count.** `covers(chat, [lifecycle])` counts nothing, since `lifecycle` is about another subject.
 - **One `covers` per `describe`.** `Vitest.covers` always registers a test named `its tales touch every case`, so two in one `describe` share a name.
 - **A struct Model or State has no cases.** Only tagged unions add `Model.X` or `State.X`.
+- **`covers` passes, a rule is untested.** It counts cases, not rules, so one rejection reached by one rule covers it for all of them. Write a tale per rule and let mutation testing find the gaps ([tales-and-covers.md](tales-and-covers.md#what-covers-proves)).
 
 ## Runtime
 

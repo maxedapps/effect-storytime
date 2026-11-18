@@ -79,13 +79,8 @@ const manual = Decision.make(
 
 Run it inside `layer(Store.layer)` and record it with `Vitest.tell` ([vitest.md](vitest.md)):
 
-<!-- snippet: test/docs/membership.test.ts#vitest -->
+<!-- snippet: test/docs/membership.test.ts#against -->
 ```ts
-describe('membership', () => {
-	Vitest.stories(lifecycle, checks, manual, holds);
-	Vitest.covers(membership, [lifecycle, checks, manual, holds]);
-});
-
 // The same decision through `handle`'s transaction on a Store. Here the Store keeps rows in
 // memory; an app passes its database layer.
 layer(Memberships.layer)('membership in its Store', (it) => {

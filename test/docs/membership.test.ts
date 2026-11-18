@@ -76,12 +76,28 @@ const holds = Exploration.decisions('any commands keep a membership valid', memb
 });
 // #endregion explore
 
-// #region vitest
+// #region rules
+// One describe per rule, holding every tale about it, so a failing test names the rule it broke.
 describe('membership', () => {
-	Vitest.stories(lifecycle, checks, manual, holds);
+	describe('a membership is granted once and revoked once', () => {
+		Vitest.stories(lifecycle);
+	});
+	describe('a check changes only what it finds changed', () => {
+		// The rule's rejection sits beside its happy path.
+		Vitest.stories(checks, manual);
+	});
+	describe('an active membership has been checked', () => {
+		// The invariant can fail, and no path of commands breaks it.
+		Vitest.breaks(membership, {
+			checkedWhenActive: { source: 'teachable', active: true, checkedAt: null }
+		});
+		Vitest.stories(holds);
+	});
 	Vitest.covers(membership, [lifecycle, checks, manual, holds]);
 });
+// #endregion rules
 
+// #region against
 // The same decision through `handle`'s transaction on a Store. Here the Store keeps rows in
 // memory; an app passes its database layer.
 layer(Memberships.layer)('membership in its Store', (it) => {
@@ -89,7 +105,7 @@ layer(Memberships.layer)('membership in its Store', (it) => {
 		Vitest.tell(ctx, lifecycle, Decision.against(lifecycle, Memberships, 'user-1'))
 	);
 });
-// #endregion vitest
+// #endregion against
 
 // #region widening
 // A helper typed with the whole Rejection union widens the handler that calls it:

@@ -95,7 +95,7 @@ export const membership = Decider.make({
 | `evolve` | `(state, event) => State` | Pure. Folds one event. |
 | `invariants` | `Record<string, (state) => boolean>`, optional | Named predicates every state must satisfy. `{}` by default. |
 
-It returns a `Decider<State, Command, Event, Rejection, Decide>`, `Decide` being the handlers' own types: the same fields, with `invariants` always present. The value is plain data, so `Decider.make({ ...membership, decide: { ...membership.decide, Revoke: other } })` builds a variant, and a test calls one rule as `membership.decide.Grant(state, command)`.
+It returns a `Decider<State, Command, Event, Rejection, Decide, Name>`, `Decide` being the handlers' own types and `Name` the union of the invariant names (`never` without any): the same fields, with `invariants` always present. `Vitest.breaks(decider, { name: state })` uses `Name` to require a breaking state for each invariant ([tales-and-covers.md](tales-and-covers.md#breaks)). The value is plain data, so `Decider.make({ ...membership, decide: { ...membership.decide, Revoke: other } })` builds a variant, and a test calls one rule as `membership.decide.Grant(state, command)`.
 
 ## Handling commands
 
@@ -314,8 +314,8 @@ Test a real Store with the same decisions you run in memory: `Decision.against` 
 | --- | --- | --- |
 | `make(definition)` | function | Builds a `Decider`, defaulting `invariants` to `{}`. |
 | `handle(decider, Store)` | function | Gives `(key, command: C) => Effect<Handled<State, EventOf<C>>, RejectionOf<C> \| E, Store>`. |
-| `Decider<State, Command, Event, Rejection, Decide>` | interface | What `make` returns. |
-| `Definition<State, Command, Event, Rejection, Decide>` | interface | What `make` takes. |
+| `Decider<State, Command, Event, Rejection, Decide, Name>` | interface | What `make` returns. `Name` defaults to `string` when you write the type yourself. |
+| `Definition<State, Command, Event, Rejection, Decide, Name>` | interface | What `make` takes. |
 | `Handlers<State, Command, Event, Rejection>` | type | The shape of `decide`: one handler per command tag. |
 | `EventOf<Decide, C>`, `RejectionOf<Decide, C>` | types | The events and rejections the handler of command `C` gives. |
 | `Store<Key, State, Event, E>` | interface | `load`, `save`, `transaction`. |

@@ -1,6 +1,6 @@
-import { describe, expect, it } from '@effect/vitest';
+import { describe, expect, expectTypeOf, it } from '@effect/vitest';
 import { Arbitrary, Effect, Result, Schema } from 'effect';
-import { Decider } from 'effect-storytime';
+import { Decider, Program } from 'effect-storytime';
 import { Decision, Exploration, Story, Tale } from 'effect-storytime/testing';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
@@ -206,4 +206,161 @@ describe('Tale', () => {
 			);
 		})
 	);
+});
+
+const Stock = Schema.Struct({ count: Schema.Int, limit: Schema.Int });
+const Restock = Schema.TaggedUnion({ Restock: {} });
+const Restocked = Schema.TaggedUnion({ Restocked: {} });
+
+const stockRules = {
+	State: Stock,
+	Command: Restock,
+	Event: Restocked,
+	Rejection: Stuck,
+	initial: { count: 0, limit: 10 },
+	decide: { Restock: () => Result.succeed([Restocked.cases.Restocked.make({})]) },
+	evolve: (current: typeof Stock.Type) => ({ ...current, count: current.limit })
+};
+
+const stock = Decider.make({
+	...stockRules,
+	invariants: {
+		notNegative: (current) => current.count >= 0,
+		withinLimit: (current) => current.count <= current.limit
+	}
+});
+
+const short = { count: -1, limit: 10 };
+const over = { count: 11, limit: 10 };
+
+describe('Tale.breaks', () => {
+	it.effect('passes when each state breaks its invariant alone', () =>
+		Effect.gen(function* () {
+			yield* Tale.breaks(stock, { notNegative: short, withinLimit: over });
+			yield* Tale.breaks(Lamp.lamp, { countIsSmall: { ...Lamp.off, count: 10 } });
+			yield* Tale.breaks(door, {});
+		})
+	);
+
+	it.effect('fails when a state keeps its invariant', () =>
+		Effect.gen(function* () {
+			const kept = yield* Effect.flip(Tale.breaks(Lamp.lamp, { countIsSmall: Lamp.off }));
+			expect(kept).toEqual(
+				new Tale.Unbroken({
+					invariant: 'countIsSmall',
+					problem: 'the model holds it',
+					actual: '{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}'
+				})
+			);
+			expect(kept.message).toBe(
+				[
+					'breaking invariant countIsSmall: the model holds it',
+					'actual: {"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}'
+				].join('\n')
+			);
+			expect(
+				yield* Effect.flip(Tale.breaks(stock, { notNegative: short, withinLimit: short }))
+			).toEqual(
+				new Tale.Unbroken({
+					invariant: 'withinLimit',
+					problem: 'the state holds it',
+					actual: '{"count":-1,"limit":10}'
+				})
+			);
+		})
+	);
+
+	it.effect('fails when a state breaks other invariants too', () =>
+		Effect.gen(function* () {
+			const both = { count: -1, limit: -2 };
+			const failure = yield* Effect.flip(
+				Tale.breaks(stock, { notNegative: both, withinLimit: over })
+			);
+			expect(failure).toEqual(
+				new Tale.Unbroken({
+					invariant: 'notNegative',
+					problem: 'the state breaks withinLimit too',
+					actual: '{"count":-1,"limit":-2}'
+				})
+			);
+			const third = Decider.make({
+				...stockRules,
+				invariants: { ...stock.invariants, owesNothing: (current) => current.limit >= 0 }
+			});
+			expect(
+				(yield* Effect.flip(
+					Tale.breaks(third, {
+						notNegative: both,
+						withinLimit: over,
+						owesNothing: { count: 0, limit: -1 }
+					})
+				)).problem
+			).toBe('the state breaks withinLimit, owesNothing too');
+		})
+	);
+
+	it.effect('fails on an invalid state, and on an invariant without one', () =>
+		Effect.gen(function* () {
+			const invalid = yield* Effect.flip(
+				Tale.breaks(stock, { notNegative: { count: -0.5, limit: 10 }, withinLimit: over })
+			);
+			expect(invalid.invariant).toBe('notNegative');
+			expect(invalid.problem).toMatch(/^the state is invalid: /);
+			// Typed without its invariant names, a Decider takes any states.
+			const widened: Decider.Decider<
+				typeof Stock.Type,
+				typeof Restock.Type,
+				typeof Restocked.Type,
+				typeof Stuck.Type
+			> = stock;
+			const widenedLamp: Program.Program<Lamp.Lamp, Lamp.Message, Lamp.Command> = Lamp.lamp;
+			expect(yield* Effect.flip(Tale.breaks(widened, { notNegative: short }))).toMatchObject({
+				invariant: 'withinLimit',
+				problem: 'no state given'
+			});
+			expect((yield* Effect.flip(Tale.breaks(widenedLamp, {}))).message).toBe(
+				'breaking invariant countIsSmall: no model given'
+			);
+		})
+	);
+
+	it.effect('fails when an invariant throws or changes the state', () =>
+		Effect.gen(function* () {
+			const throwing = Decider.make({
+				...stockRules,
+				invariants: {
+					notNegative: (current) => {
+						if (current.limit > 10) throw new Error('too big');
+						return current.count >= 0;
+					}
+				}
+			});
+			expect(
+				yield* Effect.flip(Tale.breaks(throwing, { notNegative: { count: -1, limit: 11 } }))
+			).toMatchObject({
+				invariant: 'notNegative',
+				problem: 'invariant notNegative threw: Error: too big'
+			});
+			const changing = Decider.make({
+				...stockRules,
+				invariants: {
+					notNegative: (current) => !Object.assign(current, { count: 0 })
+				}
+			});
+			expect((yield* Effect.flip(Tale.breaks(changing, { notNegative: short }))).problem).toBe(
+				'invariant notNegative changed its input'
+			);
+		})
+	);
+
+	it('types the states by the invariants, one for each', () => {
+		expectTypeOf<keyof typeof stock.invariants>().toEqualTypeOf<'notNegative' | 'withinLimit'>();
+		expectTypeOf<keyof typeof door.invariants>().toEqualTypeOf<never>();
+		// @ts-expect-error -- withinLimit has no state
+		void Tale.breaks(stock, { notNegative: short });
+		// @ts-expect-error -- no invariant is called other
+		void Tale.breaks(stock, { notNegative: short, withinLimit: over, other: over });
+		// @ts-expect-error -- a lamp is no stock
+		void Tale.breaks(stock, { notNegative: Lamp.off, withinLimit: over });
+	});
 });

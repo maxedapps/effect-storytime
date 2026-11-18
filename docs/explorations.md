@@ -48,7 +48,7 @@ const talks = Exploration.make('any conversation keeps the chat valid', chat, {
 | `properties` | `Exploration.Properties<Exploration.Update<Model, Message, Command>>` | none | Named assertions on every `update` a path runs ([Properties](#properties)). |
 | `runs` | `number` | `100` | How many paths to check. |
 | `steps` | `number` | `30` | The most actions a path takes. |
-| `seed` | `string \| number` | the title | The seed paths come from, so every run checks the same paths. |
+| `seed` | `string \| number` | the title | The seed paths come from, so every run checks the same paths unless `STORYTIME_SEED` picks another ([Fresh seeds and more runs](#fresh-seeds-and-more-runs)). |
 
 The default `send` is derived when the exploration is made. A Message Schema that `Arbitrary.schema` can't generate from (one with a custom declaration and no arbitrary annotation) throws then, so pass `send` for it. A narrow `send`, such as a few fixed turns, finds more interesting paths than every possible string: messages about the same turn meet each other.
 
@@ -98,11 +98,11 @@ Stories have no properties: a story asserts each step it means with `model`, `sa
 
 `Exploration.check(exploration, options?)` gives `Effect<Exploration.Explored, StoryFailure>`, where `Explored` is `{ runs, cases }`. `Tale.run` and `Vitest.stories` call it for you.
 
-An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds the fields below, and its `message` shows them: the counterexample with `>` at the failing step, then the replay token. Its stack starts at the `Exploration.make` or `Exploration.decisions` call.
+An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds the fields below, and its `message` shows them: the line that ran, the counterexample with `>` at the failing step, then the replay token. Its stack starts at the `Exploration.make` or `Exploration.decisions` call.
 
 | Field | Meaning |
 | --- | --- |
-| `line` | The exploration's line. |
+| `line` | The exploration's line as it ran, with the seed and runs it used. |
 | `counterexample` | The shrunk path as story or decision lines. |
 | `step` | The 1-based number of the failing line in `counterexample`. |
 | `replay` | A token for `Exploration.check(exploration, { replay })`, which checks just that path again. |
@@ -111,13 +111,29 @@ An exploration's single line names its settings: `explore 100 runs of up to 30 s
 
 To debug a counterexample, copy its lines into a story or decision. That gives you a fixed test for the bug, which stays after the fix.
 
+## Fresh seeds and more runs
+
+An exploration checks the same paths on every run, so CI stays deterministic but never looks further. Two environment variables, read through Effect's `Config` when the exploration is checked, look further on demand:
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `STORYTIME_SEED` | `random` | Every exploration draws a fresh integer seed. |
+| `STORYTIME_SEED` | an integer | Every exploration uses that seed. |
+| `STORYTIME_RUNS` | a positive integer | Every exploration checks that many paths. |
+
+They win over the exploration's own `seed` and `runs`, and apply wherever an exploration is checked, `covers` included. Any other value fails the check as a defect. Run them locally or in a scheduled CI job, such as `STORYTIME_SEED=random STORYTIME_RUNS=1000 pnpm vitest run`.
+
+A failure's message starts with the line that ran, so it names the seed it used: `explore 1000 runs of up to 30 steps, seed 1834212977, with restarts`. Run that again with `STORYTIME_SEED=1834212977 STORYTIME_RUNS=1000` to get the same failure, or use its replay token. The exploration's `lines` and the story record's `lines` keep the settings as written, so the record stays the same whatever the environment; only a failure's `line` shows the overrides.
+
+To set them from code, as in a test of your own, provide a `ConfigProvider` such as `ConfigProvider.fromEnv({ env: { STORYTIME_SEED: 'random' } })` to the Effect that checks the exploration.
+
 ## API
 
 | Export | Kind | Meaning |
 | --- | --- | --- |
 | `make(title, program, options)` | function | Explores a Program. |
 | `decisions(title, decider, options?)` | function | Explores a Decider. |
-| `check(exploration, { replay }?)` | `Effect<Explored, StoryFailure>` | Checks the paths, or one replayed path. |
+| `check(exploration, { replay }?)` | `Effect<Explored, StoryFailure>` | Checks the paths, or one replayed path, with the `STORYTIME_SEED` and `STORYTIME_RUNS` overrides. |
 | `lines(exploration)` | `ReadonlyArray<string>` | Its one line. |
 | `Exploration` | class | An exploration value: `title`, `subject`, `runs`, `steps`, `seed`, `restarts`. |
 | `Options<Model, Message, Command>` | interface | `make`'s options. |

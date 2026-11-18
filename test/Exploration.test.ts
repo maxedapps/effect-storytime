@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Arbitrary, Effect, Result, Schema } from 'effect';
+import { Arbitrary, ConfigProvider, Effect, Exit, Random, Result, Schema } from 'effect';
 import { Decider, Program } from 'effect-storytime';
 import { Exploration, Story } from 'effect-storytime/testing';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
@@ -147,6 +147,7 @@ describe('Exploration', () => {
 			expect(failure.message).toBe(
 				[
 					'update threw: Error: three',
+					'explore 100 runs of up to 30 steps, seed "throws", with restarts',
 					'step 2 of the counterexample:',
 					`  1 ${given}`,
 					`> 2 ${sent(3)}`,
@@ -611,6 +612,65 @@ describe('Exploration', () => {
 			expect(failure.counterexample).toEqual([
 				'given {"active":1,"checkedAt":null,"source":"teachable"}'
 			]);
+		})
+	);
+});
+
+/** Runs `effect` with `env` as the environment its Config reads. */
+const withEnv =
+	(env: Record<string, string>) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		Effect.provideService(effect, ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env }));
+
+describe('Exploration overrides', () => {
+	it.effect('checks as many runs as STORYTIME_RUNS says', () =>
+		Effect.gen(function* () {
+			const still = Exploration.make('the lamp stays dim', Lamp.lamp, {
+				given: off,
+				send: Arbitrary.Constant(Lamp.switched(0)),
+				runs: 5
+			});
+			expect(yield* Exploration.check(still).pipe(withEnv({ STORYTIME_RUNS: '7' }))).toEqual({
+				runs: 7,
+				cases: ['Message.Switched']
+			});
+			const failure = yield* Effect.flip(Exploration.check(counts)).pipe(
+				withEnv({ STORYTIME_RUNS: '50' })
+			);
+			expect(failure.line).toBe(
+				'explore 50 runs of up to 30 steps, seed "the lamp counts switches", with restarts'
+			);
+		})
+	);
+
+	it.effect('checks a fresh seed for STORYTIME_SEED=random and prints it to rerun', () =>
+		Effect.gen(function* () {
+			const seed = yield* Random.nextInt.pipe(Random.withSeed('fresh'));
+			const failure = yield* Effect.flip(Exploration.check(counts)).pipe(
+				withEnv({ STORYTIME_SEED: 'random' }),
+				Random.withSeed('fresh')
+			);
+			expect(failure.line).toBe(`explore 100 runs of up to 30 steps, seed ${seed}, with restarts`);
+			expect(failure.message.split('\n')[1]).toBe(failure.line);
+			expect(failure.replay).not.toBe((yield* Effect.flip(Exploration.check(counts))).replay);
+			expect(
+				yield* Effect.flip(Exploration.check(counts)).pipe(withEnv({ STORYTIME_SEED: `${seed}` }))
+			).toEqual(failure);
+		})
+	);
+
+	it.effect('dies on an invalid override', () =>
+		Effect.gen(function* () {
+			for (const env of [
+				{ STORYTIME_RUNS: '0' },
+				{ STORYTIME_RUNS: 'many' },
+				{ STORYTIME_SEED: 'fresh' },
+				{ STORYTIME_SEED: '1.5' }
+			]) {
+				expect(Exit.hasDies(yield* Effect.exit(Exploration.check(counts).pipe(withEnv(env))))).toBe(
+					true
+				);
+			}
 		})
 	);
 });

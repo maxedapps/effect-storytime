@@ -53,5 +53,7 @@ describe('seats', () => {
 	Vitest.stories(sellsOut, books, anyPath);
 	// One test: the form's tales together send, produce or reach every case it has.
 	Vitest.covers(form, [books, anyPath]);
+	// One test: each invariant breaks on the state given for it, and only that invariant.
+	Vitest.breaks(seats, { withinCapacity: { capacity: 1, guests: ['ada', 'bo'] } });
 });
 // #endregion quickstart

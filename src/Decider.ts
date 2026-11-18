@@ -28,7 +28,9 @@ export interface Decider<
 		Command,
 		Event,
 		Rejection
-	>
+	>,
+	/** The names of its invariants. */
+	Name extends string = string
 > {
 	readonly State: Schema.Codec<State, unknown>;
 	readonly Command: Schema.Codec<Command, unknown>;
@@ -38,7 +40,7 @@ export interface Decider<
 	readonly initial: State;
 	readonly decide: Decide;
 	readonly evolve: (state: State, event: Event) => State;
-	readonly invariants: Invariants<State>;
+	readonly invariants: Invariants<State, Name>;
 }
 
 export interface Definition<
@@ -46,7 +48,8 @@ export interface Definition<
 	Command extends Tagged,
 	Event,
 	Rejection,
-	Decide extends Handlers<State, Command, Event, Rejection>
+	Decide extends Handlers<State, Command, Event, Rejection>,
+	Name extends string
 > {
 	readonly State: Schema.Codec<State, unknown>;
 	readonly Command: Schema.Codec<Command, unknown>;
@@ -57,7 +60,7 @@ export interface Definition<
 	readonly decide: Decide;
 	readonly evolve: (state: State, event: Event) => State;
 	/** Named predicates every state must satisfy, checked by `handle` on the state each command reaches, before it saves. */
-	readonly invariants?: Invariants<State>;
+	readonly invariants?: Invariants<State, Name>;
 }
 
 export const make = <
@@ -65,12 +68,16 @@ export const make = <
 	Command extends Tagged,
 	Event,
 	Rejection,
-	Decide extends Handlers<State, Command, Event, Rejection>
+	Decide extends Handlers<State, Command, Event, Rejection>,
+	Name extends string = never
 >(
-	definition: Definition<State, Command, Event, Rejection, Decide>
-): Decider<State, Command, Event, Rejection, Decide> => ({
+	definition: Definition<State, Command, Event, Rejection, Decide, Name>
+): Decider<State, Command, Event, Rejection, Decide, Name> => ({
 	...definition,
-	invariants: definition.invariants ?? {}
+	// SAFETY: `Name` is inferred from the invariants given, so a definition without any has none
+	// to name (`never`), and the empty record holds all of them.
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't tie a missing property to `Name`
+	invariants: definition.invariants ?? ({} as Invariants<State, Name>)
 });
 
 /** What the handlers of `Decide` give for the commands `C`. */
