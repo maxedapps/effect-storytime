@@ -174,7 +174,7 @@ An invariant that no model can break passes every tale unnoticed. `Vitest.breaks
 | Export | Kind | Meaning |
 | --- | --- | --- |
 | `make(definition)` | function | Builds a `Program`, defaulting `resume` and `invariants`. |
-| `Program<Model, Message, Command, Name>` | interface | What `make` returns. `Name` is the union of its invariant names, `never` without any; it defaults to `string` when you write the type yourself. |
+| `Program<Model, Message, Command, Name>` | interface | What `make` returns. `Name` is the union of its invariant names, inferred by `make`; it is `string` without invariants, with type arguments given to `make` or when you write the type yourself. |
 | `Definition<Model, Message, Command, Name>` | interface | What `make` takes. |
 | `Next<Model, Command>` | interface | `{ model, commands?, cancels? }`. |
 | `Cases<A>` | interface | A Schema of tagged values with a `cases` record, such as `Schema.TaggedUnion`. |

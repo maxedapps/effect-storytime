@@ -95,7 +95,7 @@ export const membership = Decider.make({
 | `evolve` | `(state, event) => State` | Pure. Folds one event. |
 | `invariants` | `Record<string, (state) => boolean>`, optional | Named predicates every state must satisfy. `{}` by default. |
 
-It returns a `Decider<State, Command, Event, Rejection, Decide, Name>`, `Decide` being the handlers' own types and `Name` the union of the invariant names (`never` without any): the same fields, with `invariants` always present. `Vitest.breaks(decider, { name: state })` uses `Name` to require a breaking state for each invariant ([tales-and-covers.md](tales-and-covers.md#breaks)). The value is plain data, so `Decider.make({ ...membership, decide: { ...membership.decide, Revoke: other } })` builds a variant, and a test calls one rule as `membership.decide.Grant(state, command)`.
+It returns a `Decider<State, Command, Event, Rejection, Decide, Name>`, `Decide` being the handlers' own types and `Name` the union of the invariant names (`string` without invariants or with type arguments given to `make`): the same fields, with `invariants` always present. `Vitest.breaks(decider, { name: state })` uses `Name` to require a breaking state for each invariant ([tales-and-covers.md](tales-and-covers.md#breaks)). The value is plain data, so `Decider.make({ ...membership, decide: { ...membership.decide, Revoke: other } })` builds a variant, and a test calls one rule as `membership.decide.Grant(state, command)`.
 
 ## Handling commands
 

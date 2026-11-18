@@ -22,3 +22,8 @@ Key files and excerpts from the landed commit, the new failure messages as print
 ## Open questions
 
 None.
+
+## Settled findings
+
+- medium bug: `make<M, Msg, Cmd>(…)` with explicit type arguments defaulted `Name` to `never`, so `invariants` lost its predicate type and contextual typing — fixed: `Name` defaults to `string` in `make` too; type tests cover explicit `Program.make` and `Decider.make` arguments.
+- medium bug: a replay's failure line named a seed (the declared or a fresh random one) that never ran, since a replay token ignores seed, runs and size — fixed: a replay reads no overrides and its `line` is `replay <token>`; tested by replaying a random-seed failure under `STORYTIME_SEED=random`.

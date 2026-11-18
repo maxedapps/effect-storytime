@@ -102,7 +102,7 @@ An exploration's single line names its settings: `explore 100 runs of up to 30 s
 
 | Field | Meaning |
 | --- | --- |
-| `line` | The exploration's line as it ran, with the seed and runs it used. |
+| `line` | The exploration's line as it ran, with the seed and runs it used, or `replay <token>` for a replay. |
 | `counterexample` | The shrunk path as story or decision lines. |
 | `step` | The 1-based number of the failing line in `counterexample`. |
 | `replay` | A token for `Exploration.check(exploration, { replay })`, which checks just that path again. |
@@ -123,7 +123,7 @@ An exploration checks the same paths on every run, so CI stays deterministic but
 
 They win over the exploration's own `seed` and `runs`, and apply wherever an exploration is checked, `covers` included. Any other value fails the check as a defect. Run them locally or in a scheduled CI job, such as `STORYTIME_SEED=random STORYTIME_RUNS=1000 pnpm vitest run`.
 
-A failure's message starts with the line that ran, so it names the seed it used: `explore 1000 runs of up to 30 steps, seed 1834212977, with restarts`. Run that again with `STORYTIME_SEED=1834212977 STORYTIME_RUNS=1000` to get the same failure, or use its replay token. The exploration's `lines` and the story record's `lines` keep the settings as written, so the record stays the same whatever the environment; only a failure's `line` shows the overrides.
+A failure's message shows the line that ran, so it names the seed it used: `explore 1000 runs of up to 30 steps, seed 1834212977, with restarts`. Run that again with `STORYTIME_SEED=1834212977 STORYTIME_RUNS=1000` to get the same failure, or use its replay token. The exploration's `lines` and the story record's `lines` keep the settings as written, so the record stays the same whatever the environment; only a failure's `line` shows the overrides. A replay ignores them: it checks the token's one path, and its failure's `line` is `replay <token>`.
 
 To set them from code, as in a test of your own, provide a `ConfigProvider` such as `ConfigProvider.fromEnv({ env: { STORYTIME_SEED: 'random' } })` to the Effect that checks the exploration.
 

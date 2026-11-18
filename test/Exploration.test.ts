@@ -121,13 +121,12 @@ describe('Exploration', () => {
 				given: off,
 				send: switches
 			});
-			expect(
-				yield* Effect.flip(Exploration.check(fixed, { replay: failure.replay ?? '' }))
-			).toEqual(
+			const replay = failure.replay ?? '';
+			expect(yield* Effect.flip(Exploration.check(fixed, { replay }))).toEqual(
 				new Story.StoryFailure({
 					title: 'fixed',
 					step: 1,
-					line: 'explore 100 runs of up to 30 steps, seed "fixed", with restarts',
+					line: `replay ${replay}`,
 					problem: 'Property replay failed: PropertyPassed'
 				})
 			);
@@ -653,6 +652,13 @@ describe('Exploration overrides', () => {
 			expect(failure.line).toBe(`explore 100 runs of up to 30 steps, seed ${seed}, with restarts`);
 			expect(failure.message.split('\n')[1]).toBe(failure.line);
 			expect(failure.replay).not.toBe((yield* Effect.flip(Exploration.check(counts))).replay);
+			// A replay checks the token's path whatever the overrides, and names the token.
+			const replay = failure.replay ?? '';
+			const replayed = yield* Effect.flip(Exploration.check(counts, { replay })).pipe(
+				withEnv({ STORYTIME_SEED: 'random' })
+			);
+			expect(replayed.line).toBe(`replay ${replay}`);
+			expect(replayed.counterexample).toEqual(failure.counterexample);
 			expect(
 				yield* Effect.flip(Exploration.check(counts)).pipe(withEnv({ STORYTIME_SEED: `${seed}` }))
 			).toEqual(failure);

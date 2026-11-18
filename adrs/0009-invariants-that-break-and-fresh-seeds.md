@@ -1,6 +1,6 @@
 # 0009 Invariants that break, and fresh exploration seeds
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -12,8 +12,8 @@ Task 4013 (research `research-4013-story-testing-review`, §2 and §6, approved 
 ## Decision
 
 1. **`Tale.breaks(subject, states)`** takes, for each invariant of a Program or a Decider, a model or state that breaks it, and fails with `Unbroken` unless each is valid, survives JSON and breaks exactly its invariant, no other. `Vitest.breaks` registers it as one test, as `Vitest.covers` does for `Tale.covers`. Exactly one: a state that also breaks another invariant proves less, and an invariant that only ever breaks together with another adds nothing.
-2. **Invariant names are part of the type.** `Program` and `Decider` get a last type parameter `Name extends string = string`, inferred by `make` from the invariants (`never` without any), so `breaks`' `states` must name every invariant and nothing else. A subject typed without it (`Decider<S, C, E, R>`) takes any names; `breaks` still checks every invariant at runtime and fails with `no state given` for a missing one.
-3. **`STORYTIME_SEED` and `STORYTIME_RUNS` override every exploration when it is checked**, read through Effect `Config` (the environment by default, any `ConfigProvider` in tests). `STORYTIME_SEED` is `random`, a fresh seed per check from Effect's `Random`, or an integer; `STORYTIME_RUNS` a positive integer. They override the exploration's own `seed` and `runs`; an invalid value dies. The failure's `line`, now also printed in its message, names the seed and runs that ran, so `STORYTIME_SEED=<printed seed>` reruns the failing check and the `replay` token still replays its one path.
+2. **Invariant names are part of the type.** `Program` and `Decider` get a last type parameter `Name extends string = string`, inferred by `make` from the invariants, so `breaks`' `states` must name every invariant and nothing else. Without invariants, with type arguments given to `make` or in a type written without it (`Decider<S, C, E, R>`), `Name` is `string`: such a subject takes any names, since a `never` default would make `make<…>({ invariants })` accept non-predicates; `breaks` still checks every invariant at runtime and fails with `no state given` for a missing one.
+3. **`STORYTIME_SEED` and `STORYTIME_RUNS` override every exploration when it is checked**, read through Effect `Config` (the environment by default, any `ConfigProvider` in tests). `STORYTIME_SEED` is `random`, a fresh seed per check from Effect's `Random`, or an integer; `STORYTIME_RUNS` a positive integer. They override the exploration's own `seed` and `runs`; an invalid value dies. The failure's `line`, now also printed in its message, names the seed and runs that ran, so `STORYTIME_SEED=<printed seed>` reruns the failing check. A replay ignores the overrides and `seed` alike (the token holds its seed), so its failure's `line` is `replay <token>`.
 4. The tale's own `lines` (and so the story record) keep the exploration as written; only a failure's `line` shows the overrides. The record stays byte-stable across seeds.
 
 ## Alternatives

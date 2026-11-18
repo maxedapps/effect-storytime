@@ -95,14 +95,14 @@ export const make = <
 	Model,
 	Message extends Tagged,
 	Command extends Tagged,
-	Name extends string = never
+	Name extends string = string
 >(
 	definition: Definition<Model, Message, Command, Name>
 ): Program<Model, Message, Command, Name> => ({
 	...definition,
 	resume: definition.resume ?? unchanged,
-	// SAFETY: `Name` is inferred from the invariants given, so a definition without any has none
-	// to name (`never`), and the empty record holds all of them.
+	// SAFETY: `Name` is inferred from the invariants given; without any it keeps its default,
+	// `string`, which the empty record satisfies.
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't tie a missing property to `Name`
 	invariants: definition.invariants ?? ({} as Invariants<Model, Name>)
 });

@@ -314,10 +314,11 @@ describe('Tale.breaks', () => {
 				typeof Stuck.Type
 			> = stock;
 			const widenedLamp: Program.Program<Lamp.Lamp, Lamp.Message, Lamp.Command> = Lamp.lamp;
-			expect(yield* Effect.flip(Tale.breaks(widened, { notNegative: short }))).toMatchObject({
-				invariant: 'withinLimit',
-				problem: 'no state given'
-			});
+			expect(
+				yield* Tale.breaks(widened, { notNegative: short }).pipe(
+					Effect.catchTag('Unbroken', Effect.succeed)
+				)
+			).toMatchObject({ invariant: 'withinLimit', problem: 'no state given' });
 			expect((yield* Effect.flip(Tale.breaks(widenedLamp, {}))).message).toBe(
 				'breaking invariant countIsSmall: no model given'
 			);
@@ -355,7 +356,21 @@ describe('Tale.breaks', () => {
 
 	it('types the states by the invariants, one for each', () => {
 		expectTypeOf<keyof typeof stock.invariants>().toEqualTypeOf<'notNegative' | 'withinLimit'>();
-		expectTypeOf<keyof typeof door.invariants>().toEqualTypeOf<never>();
+		expectTypeOf<keyof typeof door.invariants>().toEqualTypeOf<string>();
+		// Given type arguments, the names default to `string`, and invariants are still predicates.
+		const explicit = Program.make<Lamp.Lamp, Lamp.Message, Lamp.Command>({
+			...Lamp.lamp,
+			invariants: { notNegative: (model) => model.count >= 0 }
+		});
+		expectTypeOf<keyof typeof explicit.invariants>().toEqualTypeOf<string>();
+		void Decider.make<
+			typeof Stock.Type,
+			typeof Restock.Type,
+			typeof Restocked.Type,
+			typeof Stuck.Type,
+			typeof stockRules.decide
+			// @ts-expect-error -- an invariant is a predicate
+		>({ ...stockRules, invariants: { notNegative: 42 } });
 		// @ts-expect-error -- withinLimit has no state
 		void Tale.breaks(stock, { notNegative: short });
 		// @ts-expect-error -- no invariant is called other

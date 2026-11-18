@@ -341,24 +341,31 @@ const seeded = (exploration: Exploration, seed: Option.Option<'random' | number>
 		onSome: (chosen) => (chosen === 'random' ? Random.nextInt : Effect.succeed(chosen))
 	});
 
+/** The paths to check, with the line naming them: the overrides over the exploration's settings. */
+const generated = Effect.fnUntraced(function* (exploration: Exploration) {
+	const chosen = yield* Effect.orDie(overrides);
+	const runs = Option.getOrElse(chosen.runs, () => exploration.runs);
+	const seed = yield* seeded(exploration, chosen.seed);
+	const { steps, restarts } = exploration;
+	return { line: summary({ runs, steps, seed, restarts }), runs, size: steps, seed };
+});
+
 /**
  * Checks `runs` generated paths, or as many as `STORYTIME_RUNS` says, from the exploration's seed or
  * `STORYTIME_SEED`'s; an invalid override dies. A failure carries the shrunk path as a story's lines, its
  * counterexample, with `step` numbering the line that failed, and a `replay` token that checks
- * just that path again.
+ * just that path again. A replay checks only the token's path, so its line is the token.
  */
 export const check = Effect.fnUntraced(function* (
 	exploration: Exploration,
 	options?: { readonly replay?: Arbitrary.Replay }
 ): Effect.fn.Return<Explored, Story.StoryFailure> {
 	const { title } = exploration;
-	const chosen = yield* Effect.orDie(overrides);
-	const settings = {
-		runs: Option.getOrElse(chosen.runs, () => exploration.runs),
-		steps: exploration.steps,
-		seed: yield* seeded(exploration, chosen.seed),
-		restarts: exploration.restarts
-	};
+	const token = options?.replay;
+	const { line, ...settings } =
+		token === undefined
+			? yield* generated(exploration)
+			: { line: `replay ${token}`, replay: token };
 	const seen = yield* Ref.make<ReadonlyArray<string>>([]);
 	const result = yield* Arbitrary.checkEffect(
 		exploration.walks,
@@ -367,14 +374,8 @@ export const check = Effect.fnUntraced(function* (
 				Effect.flatMap((cases) => Ref.update(seen, (all) => Arr.dedupe([...all, ...cases]))),
 				Effect.as(true)
 			),
-		{
-			runs: settings.runs,
-			size: settings.steps,
-			seed: settings.seed,
-			replay: options?.replay
-		}
+		settings
 	);
-	const line = summary(settings);
 	return yield* Match.value(result).pipe(
 		Match.tag('Passed', ({ runs }) =>
 			Effect.map(Ref.get(seen), (cases): Explored => ({ runs, cases: cases.toSorted() }))
