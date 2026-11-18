@@ -34,7 +34,7 @@ const told = (tale: Tale.Tale, exit: Exit.Exit<Tale.Reached, unknown>): Told =>
 	encodeTold({
 		kind: tale._tag,
 		title: tale.title,
-		lines: Tale.lines(tale),
+		steps: Tale.steps(tale),
 		...Exit.match(exit, {
 			onSuccess: (reached) => ({ status: 'passed' as const, ...reached }),
 			onFailure: (cause) => ({
@@ -121,7 +121,7 @@ export class Reporter implements VitestReporter {
 					title: tale.title,
 					file: posix.relative(this.#root, module.moduleId),
 					test: test.fullName,
-					lines: tale.lines,
+					steps: tale.steps,
 					status: tale.status,
 					final: tale.final,
 					finals: tale.finals,
@@ -132,7 +132,7 @@ export class Reporter implements VitestReporter {
 		);
 		const path = resolve(this.#root, this.#outputFile);
 		await mkdir(dirname(path), { recursive: true });
-		const report: StoryReport = { version: 3, stories: Arr.sort(records, byPlace) };
+		const report: StoryReport = { version: 4, stories: Arr.sort(records, byPlace) };
 		await writeFile(path, `${JSON.stringify(report, null, '\t')}\n`);
 	}
 }

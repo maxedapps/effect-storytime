@@ -53,7 +53,7 @@ describe('membership', () => {
 });
 ```
 
-`tell` records the tale's lines from the tale and the outcome from `run`. When `run` fails with an error other than a `StoryFailure` (a database error, say), the record has only `status: "failed"`.
+`tell` records the tale's steps from the tale and the outcome from `run`. When `run` fails with an error other than a `StoryFailure` (a database error, say), the record has only `status: "failed"`.
 
 ## Writing the story record
 

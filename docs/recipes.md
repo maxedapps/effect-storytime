@@ -209,8 +209,8 @@ Write the Store as a `Context.Service` with a layer on your database ([decider.m
 
 ## Fixing an exploration's counterexample
 
-1. Read `failure.counterexample` and `failure.step` from the test output or the story record.
-2. Copy the lines into a `Story.make` or `Decision.make`, building each value with its union's `make`. The new tale fails the same way.
+1. Read the failure's message in the test output, or `failure.code` in the story record.
+2. Paste the code into a test, with `program` or `decider` and the bound builders in scope. The new tale fails at the same step; for a property, assert what it checks at that step ([explorations.md](explorations.md#running-and-failures)).
 3. Fix the subject until the tale passes, then keep the tale.
 4. `Exploration.check(exploration, { replay: failure.replay })` checks just the original path again.
 

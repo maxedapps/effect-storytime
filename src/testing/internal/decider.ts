@@ -137,22 +137,19 @@ export const strict = <State, Command extends Tagged, Event, Rejection>(
 		holds: invariants
 	});
 
-	/** Validates the command, runs the checked transition on a copy of it and checks the ruling. */
+	/** Validates the command and runs the checked transition on a copy of it. */
 	const rule = Effect.fnUntraced(function* (
 		current: State,
 		command: Command
 	): Effect.fn.Return<Transition<State, Event, Rejection>, Problem> {
 		yield* the.command.valid(command);
-		const copy = yield* the.command.copy(command);
-		const ruled = yield* checked(current, copy);
-		yield* rulings({
-			before: current,
-			command: copy,
-			decided: ruled.decided,
-			after: ruled.reached
-		});
-		return ruled;
+		return yield* checked(current, yield* the.command.copy(command));
 	});
 
-	return { check, rule };
+	return {
+		check,
+		rule,
+		/** Checks the properties on a ruling, once a path has named what it decided. */
+		holds: rulings
+	};
 };

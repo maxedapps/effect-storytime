@@ -28,7 +28,7 @@
 - **A wide `send` explores little.** Random strings rarely meet: an `Answered` for turn `"x7#"` never matches the pending `Ask`. Generate from a few fixed values so messages about the same thing meet.
 - **`replies` decide what completes.** A command with no replies stays pending forever on that path. Give each streaming command its `emits`, too.
 - **`Arbitrary` has no `oneOf`.** Generate a `Schema.Literals` and `Arbitrary.map` it to the values.
-- **A failure only with `STORYTIME_SEED=random`.** The fresh seed found a path the default seed never takes. The failure's line names the seed: rerun with it, then copy the counterexample into a story or decision so the path stays tested ([explorations.md](explorations.md#fresh-seeds-and-more-runs)).
+- **A failure only with `STORYTIME_SEED=random`.** The fresh seed found a path the default seed never takes. The failure's line names the seed: rerun with it, then paste the failure's code as a story or decision so the path stays tested ([explorations.md](explorations.md#fresh-seeds-and-more-runs)).
 
 ## Coverage
 

@@ -55,24 +55,48 @@ export const tagger = <A>(schema: Schema.Codec<A, unknown>) => {
 		Option.map(Option.flatMap(Result.getSuccess(encode(value)), tagged), ({ tag }) => tag);
 };
 
-/** The line for a value that is not JSON: the reason, on one line. */
-export const notJson = (error: Schema.SchemaError) =>
-	`(not JSON: ${error.message.replaceAll(/\s+/g, ' ')})`;
-
 /**
- * Renders a value for a story line: a tagged value as `Tag {fields}`, anything else as JSON, and a
- * value that is not JSON as the reason.
+ * A value split for showing: its `_tag`, its canonical JSON without the tag (absent for a tag
+ * alone), or why it has no JSON.
  */
-export const describer = <A>(schema: Schema.Codec<A, unknown>) => {
+export interface Shown {
+	readonly tag?: string;
+	readonly value?: Schema.Json;
+	readonly notJson?: string;
+}
+
+/** Why a value is not JSON, on one line. */
+const reason = (error: Schema.SchemaError) => error.message.replaceAll(/\s+/g, ' ');
+
+/** Splits values of `schema` for showing. */
+export const shower = <A>(schema: Schema.Codec<A, unknown>) => {
 	const encode = encoder(schema);
-	return (value: A): string =>
+	return (value: A): Shown =>
 		Result.match(encode(value), {
-			onFailure: notJson,
+			onFailure: (error) => ({ notJson: reason(error) }),
 			onSuccess: (json) =>
 				Option.match(tagged(json), {
-					onNone: () => JSON.stringify(json),
+					onNone: () => ({ value: json }),
 					onSome: ({ tag, fields }) =>
-						fields.length === 0 ? tag : `${tag} ${JSON.stringify(Object.fromEntries(fields))}`
+						fields.length === 0 ? { tag } : { tag, value: Object.fromEntries(fields) }
 				})
 		});
 };
+
+/** A shown value as a story line has it: `Tag {fields}`, the tag alone, its JSON, or why it has none. */
+export const text = ({ tag, value, notJson }: Shown): string =>
+	notJson === undefined
+		? [
+				...(tag === undefined ? [] : [tag]),
+				...(value === undefined ? [] : [JSON.stringify(value)])
+			].join(' ')
+		: `(not JSON: ${notJson})`;
+
+/** Renders a value for a story line, as `text` shows it. */
+export const describer = <A>(schema: Schema.Codec<A, unknown>) => {
+	const show = shower(schema);
+	return (value: A): string => text(show(value));
+};
+
+/** The line for a value that is not JSON: the reason, on one line. */
+export const notJson = (error: Schema.SchemaError) => text({ notJson: reason(error) });

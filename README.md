@@ -176,9 +176,9 @@ describe('seats', () => {
 });
 ```
 
-Each tale is a test named by its title. Its failure message names the step and line that broke a rule, with `expected` and `actual` for Vitest to diff, and Vitest's code frame points at the tale. A failing exploration's message shows its shrunk path as story lines and the token that replays it. `covers` fails with the cases no tale touches, and `breaks` with the invariant whose state doesn't break it alone.
+Each tale is a test named by its title. Its failure message names the step and line that broke a rule, with `expected` and `actual` for Vitest to diff, and Vitest's code frame points at the tale. A failing exploration's message shows its shrunk path as story lines, the token that replays it, and the same path as a `Story.make(...)` or `Decision.make(...)` call to paste into a test. `covers` fails with the cases no tale touches, and `breaks` with the invariant whose state doesn't break it alone.
 
-Add the reporter to `vitest.config.ts`, and every run writes the story record, a deterministic JSON file with every tale's lines, status, final models and cases ([docs/story-record.md](docs/story-record.md)):
+Add the reporter to `vitest.config.ts`, and every run writes the story record, a deterministic JSON file with every tale's steps as data, status, final models and cases, which `StoryRecord.markdown` renders as a page to review ([docs/story-record.md](docs/story-record.md)):
 
 <!-- snippet: test/examples/vitest.config.ts#config -->
 ```ts

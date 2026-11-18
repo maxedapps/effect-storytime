@@ -34,12 +34,11 @@ export interface Update<Model, Message, Command> {
 const tagOf = (value: Tagged) => value._tag;
 
 /**
- * The steps of `program`. With `owing`, every produced command is owed an assertion; explored
- * paths assert no effects, so they owe none, and check their `properties` on every update instead.
+ * The steps of `program`. Every produced command is owed an assertion; explored paths assert them
+ * right after the step that produced them, and check their `properties` on every update.
  */
 export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 	program: Program<Model, Message, Command>,
-	owing: boolean,
 	properties: Readonly<Record<string, (update: Update<Model, Message, Command>) => boolean>> = {}
 ) => {
 	const the = {
@@ -98,7 +97,7 @@ export const machine = <Model, Message extends Tagged, Command extends Tagged>(
 		}
 		for (const command of next.commands ?? []) {
 			const key = yield* the.command.key(command);
-			pending = [...pending.filter((entry) => entry.key !== key), { key, command, owed: owing }];
+			pending = [...pending.filter((entry) => entry.key !== key), { key, command, owed: true }];
 		}
 		const model = yield* the.model.copy(next.model);
 		yield* invariants(model);

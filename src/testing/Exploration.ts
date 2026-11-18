@@ -15,20 +15,24 @@ import {
 	Predicate,
 	Random,
 	Ref,
+	Result,
 	Schema
 } from 'effect';
 import type { Decider } from '../Decider.ts';
 import * as Decision from './Decision.ts';
 import { attempt, Broken } from './internal/check.ts';
+import { code } from './internal/code.ts';
 import type { Problem } from './internal/check.ts';
 import { caser, strict } from './internal/decider.ts';
 import type { Ruling } from './internal/decider.ts';
 import { machine } from './internal/machine.ts';
 import type { State as Running, Update } from './internal/machine.ts';
+import { line, say } from './internal/steps.ts';
 import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import type { Program, Tagged } from '../Program.ts';
 import * as Story from './Story.ts';
+import * as Tale from './Tale.ts';
 
 export type { Ruling, Update };
 
@@ -87,7 +91,7 @@ export class Exploration extends Data.TaggedClass('Exploration')<{
 	readonly walks: Arbitrary.Arbitrary<Walk>;
 }> {
 	[TypeId](): Told {
-		return { subject: this.subject, lines: lines(this), run: check(this) };
+		return { subject: this.subject, steps: [said(this)], run: check(this) };
 	}
 }
 
@@ -152,16 +156,22 @@ export const decisions = <State, Command extends Tagged, Event, Rejection>(
 		decisions
 	);
 
-const summary = ({
+/** An exploration's one step: `explore` with the settings it runs with. */
+const said = ({
 	runs,
 	steps,
 	seed,
 	restarts
 }: Pick<Exploration, 'runs' | 'steps' | 'seed' | 'restarts'>) =>
-	`explore ${runs} runs of up to ${steps} steps, seed ${JSON.stringify(seed)}${restarts ? ', with restarts' : ''}`;
+	say(
+		'explore',
+		0,
+		[],
+		`${runs} runs of up to ${steps} steps, seed ${JSON.stringify(seed)}${restarts ? ', with restarts' : ''}`
+	);
 
-/** Renders an exploration as its one line; a failure's counterexample is a tale's lines. */
-export const lines = (exploration: Exploration): ReadonlyArray<string> => [summary(exploration)];
+/** Renders an exploration as its one line; a failure's counterexample is a tale's steps. */
+export const lines = (exploration: Exploration): ReadonlyArray<string> => [line(said(exploration))];
 
 type Action<Message> = Data.TaggedEnum<{
 	Send: { readonly message: Message };
@@ -214,7 +224,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 	options: Options<Model, Message, Command>
 ) => {
 	const { replies = nothing, emits = nothing } = options;
-	const rules = machine(program, false, options.properties);
+	const rules = machine(program, options.properties);
 	const story = Story.of(program);
 
 	/** The replies and stream messages of a command; a throwing callback is a Problem. */
@@ -267,7 +277,7 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 			new Broken({
 				step: told.length,
 				problem,
-				counterexample: Story.lines(Story.make(title, program, ...told))
+				counterexample: Story.make(title, program, ...told)
 			});
 		let state = yield* Effect.mapError(rules.start(path.start), broken);
 		for (const action of path.actions) {
@@ -276,6 +286,12 @@ const walker = <Model, Message extends Tagged, Command extends Tagged>(
 				const [step, effect] = next.value;
 				told.push(step);
 				state = yield* Effect.mapError(effect, broken);
+				// Asserts what the step produced, so the path runs as a story.
+				if (state.pending.some((entry) => entry.owed)) {
+					const pending = state.pending.map((entry) => entry.command);
+					told.push(story.commands(...pending));
+					state = yield* Effect.mapError(rules.commands(state, pending), broken);
+				}
 			}
 		}
 		return state.cases;
@@ -302,13 +318,24 @@ const deciderWalker = <State, Command extends Tagged, Event, Rejection>(
 			new Broken({
 				step: told.length,
 				problem,
-				counterexample: Decision.lines(Decision.make(title, decider, ...told))
+				counterexample: Decision.make(title, decider, ...told)
 			});
 		let state = yield* Effect.mapError(rules.check(path.start), broken);
 		const cases = [...touch.state(state)];
 		for (const command of path.commands) {
 			told.push(decision.when(command));
 			const ruled = yield* Effect.mapError(rules.rule(state, command), broken);
+			// Names what the command gave, so the path runs as a decision.
+			told.push(
+				Result.match(ruled.decided, {
+					onSuccess: (events) => decision.accepted(...events),
+					onFailure: decision.rejected
+				})
+			);
+			yield* Effect.mapError(
+				rules.holds({ before: state, command, decided: ruled.decided, after: ruled.reached }),
+				broken
+			);
 			cases.push(...touch.ruled(command, ruled));
 			state = ruled.reached;
 		}
@@ -347,14 +374,14 @@ const generated = Effect.fnUntraced(function* (exploration: Exploration) {
 	const runs = Option.getOrElse(chosen.runs, () => exploration.runs);
 	const seed = yield* seeded(exploration, chosen.seed);
 	const { steps, restarts } = exploration;
-	return { line: summary({ runs, steps, seed, restarts }), runs, size: steps, seed };
+	return { ran: line(said({ runs, steps, seed, restarts })), runs, size: steps, seed };
 });
 
 /**
  * Checks `runs` generated paths, or as many as `STORYTIME_RUNS` says, from the exploration's seed or
- * `STORYTIME_SEED`'s; an invalid override dies. A failure carries the shrunk path as a story's lines, its
- * counterexample, with `step` numbering the line that failed, and a `replay` token that checks
- * just that path again. A replay checks only the token's path, so its line is the token.
+ * `STORYTIME_SEED`'s; an invalid override dies. A failure carries the shrunk path as a story's or decision's steps, its
+ * counterexample, with `step` numbering the step that failed, the code that makes it, and a
+ * `replay` token that checks just that path again. A replay checks only the token's path, so its line is the token.
  */
 export const check = Effect.fnUntraced(function* (
 	exploration: Exploration,
@@ -362,10 +389,8 @@ export const check = Effect.fnUntraced(function* (
 ): Effect.fn.Return<Explored, Story.StoryFailure> {
 	const { title } = exploration;
 	const token = options?.replay;
-	const { line, ...settings } =
-		token === undefined
-			? yield* generated(exploration)
-			: { line: `replay ${token}`, replay: token };
+	const { ran, ...settings } =
+		token === undefined ? yield* generated(exploration) : { ran: `replay ${token}`, replay: token };
 	const seen = yield* Ref.make<ReadonlyArray<string>>([]);
 	const result = yield* Arbitrary.checkEffect(
 		exploration.walks,
@@ -388,11 +413,12 @@ export const check = Effect.fnUntraced(function* (
 					new Story.StoryFailure({
 						title,
 						step: error.step,
-						line,
+						line: ran,
 						problem: error.problem.message,
 						expected: error.problem.expected,
 						actual: error.problem.actual,
-						counterexample: error.counterexample,
+						counterexample: Tale.steps(error.counterexample),
+						code: code(error.counterexample),
 						replay
 					})
 				)
@@ -405,7 +431,7 @@ export const check = Effect.fnUntraced(function* (
 					new Story.StoryFailure({
 						title,
 						step: 1,
-						line,
+						line: ran,
 						problem: String(Arbitrary.formatCheckFailure(unfinished))
 					})
 				)

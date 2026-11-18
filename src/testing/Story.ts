@@ -3,8 +3,10 @@
  * for every command it asks for. Running it checks each step and the strict rules in between.
  */
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect';
-import { describer } from '../internal/canonical.ts';
+import { shower } from '../internal/canonical.ts';
 import { Problem } from './internal/check.ts';
+import { line, say, Step as StepSchema } from './internal/steps.ts';
+import type { Value, Verb } from './internal/steps.ts';
 import { machine } from './internal/machine.ts';
 import type { State } from './internal/machine.ts';
 import { located, made, TypeId } from './internal/tale.ts';
@@ -90,14 +92,7 @@ export class Story<Model, Message extends Tagged, Command extends Tagged> extend
 	readonly steps: Steps<Model, Message, Command>;
 }> {
 	[TypeId](): Told {
-		return {
-			subject: this.program,
-			lines: lines(this),
-			run: Effect.map(run(this), ({ finals, cases }) => ({
-				finals: finals.map(({ order, final }) => ({ order, final })),
-				cases
-			}))
-		};
+		return { subject: this.program, steps: told(this), run: run(this) };
 	}
 }
 
@@ -110,7 +105,8 @@ export const make = <Model, Message extends Tagged, Command extends Tagged>(
 /**
  * A failed tale, with the step (its line number in `lines`) where it failed. Its message tells all
  * of it but a differing `expected` and `actual`, which test runners diff, and its stack starts at
- * the call that made the tale.
+ * the call that made the tale. A failed exploration also carries its counterexample, as steps and
+ * as the code that makes it.
  */
 export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailure', {
 	title: Schema.String,
@@ -119,19 +115,20 @@ export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailu
 	problem: Schema.String,
 	expected: Schema.optional(Schema.String),
 	actual: Schema.optional(Schema.String),
-	counterexample: Schema.optional(Schema.Array(Schema.String)),
-	replay: Schema.optional(Schema.String)
+	counterexample: Schema.optional(Schema.Array(StepSchema)),
+	replay: Schema.optional(Schema.String),
+	code: Schema.optional(Schema.String)
 }) {
 	override get message() {
-		const { step, line, expected, actual, counterexample, replay } = this;
+		const { step, line: at, expected, actual, counterexample, replay, code } = this;
 		const where =
 			counterexample === undefined
-				? [`step ${step}: ${line}`]
+				? [`step ${step}: ${at}`]
 				: [
-						line,
+						at,
 						`step ${step} of the counterexample:`,
-						...counterexample.map((told, index) =>
-							index + 1 === step ? `> ${index + 1} ${told}` : `  ${index + 1} ${told}`
+						...counterexample.map(
+							(told, index) => `${index + 1 === step ? '>' : ' '} ${index + 1} ${line(told)}`
 						)
 					];
 		return [
@@ -140,12 +137,13 @@ export class StoryFailure extends Schema.TaggedError<StoryFailure>()('StoryFailu
 			...(expected === undefined && actual !== undefined
 				? [`actual: ${actual.replaceAll('\n', '\n  ')}`]
 				: []),
-			...(replay === undefined ? [] : [`replay: ${replay}`])
+			...(replay === undefined ? [] : [`replay: ${replay}`]),
+			...(code === undefined ? [] : ['as code:', code])
 		].join('\n');
 	}
 }
 
-/** Where one order of a passing story ended: its final model, also as a line. */
+/** Where one order of a passing story ended: its final model, also as data. */
 export interface Final<Model> {
 	/**
 	 * The order that got here, as the step numbers of every `anyOrder`'s steps as they ran, one
@@ -153,7 +151,7 @@ export interface Final<Model> {
 	 */
 	readonly order: ReadonlyArray<number>;
 	readonly model: Model;
-	readonly final: string;
+	readonly final: Value;
 }
 
 /**
@@ -166,12 +164,12 @@ export interface Outcome<Model> {
 }
 
 /**
- * A step placed in its story: its number and line in `lines`, and the entries inside a group
- * (inlined, with no line of its own) or an `anyOrder` (one unit each).
+ * A step placed in its story: its number and line in `lines`, what it says, and the entries inside
+ * a group (inlined, saying nothing of its own) or an `anyOrder` (one unit each).
  */
 interface Entry<Model, Message, Command> {
 	readonly no: number;
-	readonly depth: number;
+	readonly data: Option.Option<StepSchema>;
 	readonly line: string;
 	readonly step: Step<Model, Message, Command>;
 	readonly children: ReadonlyArray<Entry<Model, Message, Command>>;
@@ -187,43 +185,42 @@ const layout = <Model, Message extends Tagged, Command extends Tagged>(
 	program: Program<Model, Message, Command>,
 	body: Steps<Model, Message, Command>
 ): ReadonlyArray<Entry<Model, Message, Command>> => {
-	const showModel = describer(program.Model);
-	const showMessage = describer(program.Message);
-	const showCommand = describer(program.Command);
+	const model = shower(program.Model);
+	const message = shower(program.Message);
+	const command = shower(program.Command);
 	let next = 1;
 	const place = (
 		depth: number,
 		group: Steps<Model, Message, Command>
 	): ReadonlyArray<Entry<Model, Message, Command>> =>
 		group.map((step) => {
-			const leaf = (line: string) => ({ no: next++, depth, line, step, children: [] });
+			const entry = (
+				verb: Verb,
+				values: ReadonlyArray<Value>,
+				label?: string
+			): Entry<Model, Message, Command> => {
+				const data = say(verb, depth, values, label);
+				return { no: next++, data: Option.some(data), line: line(data), step, children: [] };
+			};
 			return Step.$match(step, {
-				Given: ({ model: start }) => leaf(`given ${showModel(start)}`),
-				Send: ({ message }) => leaf(`send ${showMessage(message)}`),
-				Model: ({ expected }) => leaf(`model ${showModel(expected)}`),
-				Satisfies: ({ label }) => leaf(`satisfies ${label}`),
-				Commands: ({ commands: expected }) =>
-					leaf(`commands ${expected.length === 0 ? 'none' : expected.map(showCommand).join(', ')}`),
-				Resolve: ({ command, reply }) =>
-					leaf(
-						`resolve ${showCommand(command)}${Option.match(reply, {
-							onNone: () => '',
-							onSome: (message) => ` → ${showMessage(message)}`
-						})}`
-					),
-				Emit: ({ command, message }) =>
-					leaf(`emit ${showCommand(command)} → ${showMessage(message)}`),
-				Restart: () => leaf('restart'),
+				Given: ({ model: start }) => entry('given', [model(start)]),
+				Send: ({ message: sent }) => entry('send', [message(sent)]),
+				Model: ({ expected }) => entry('model', [model(expected)]),
+				Satisfies: ({ label }) => entry('satisfies', [], label),
+				Commands: ({ commands: expected }) => entry('commands', expected.map(command)),
+				Resolve: ({ command: done, reply }) =>
+					entry('resolve', [command(done), ...Option.toArray(Option.map(reply, message))]),
+				Emit: ({ command: running, message: sent }) =>
+					entry('emit', [command(running), message(sent)]),
+				Restart: () => entry('restart', []),
+				// The `anyOrder` takes its number before the steps inside it.
 				AnyOrder: ({ steps: units }) => ({
-					no: next++,
-					depth,
-					line: 'any order',
-					step,
+					...entry('any order', []),
 					children: place(depth + 1, units)
 				}),
 				Group: ({ steps: inner }) => ({
 					no: next,
-					depth,
+					data: Option.none(),
 					// Stryker disable next-line StringLiteral: a group has no line of its own, so none shows it
 					line: '',
 					step,
@@ -234,7 +231,7 @@ const layout = <Model, Message extends Tagged, Command extends Tagged>(
 	return place(0, body);
 };
 
-/** Every entry that has a line, in story order. */
+/** Every entry that says something, in story order. */
 const flatten = <Model, Message, Command>(
 	entries: ReadonlyArray<Entry<Model, Message, Command>>
 ): ReadonlyArray<Entry<Model, Message, Command>> =>
@@ -242,13 +239,16 @@ const flatten = <Model, Message, Command>(
 		Step.$is('Group')(entry.step) ? flatten(entry.children) : [entry, ...flatten(entry.children)]
 	);
 
+/** What a story says, step by step, from its value alone. */
+const told = <Model, Message extends Tagged, Command extends Tagged>(
+	story: Story<Model, Message, Command>
+): ReadonlyArray<StepSchema> =>
+	flatten(layout(story.program, story.steps)).flatMap((entry) => Option.toArray(entry.data));
+
 /** Renders a story as plain lines, from its value alone. */
 export const lines = <Model, Message extends Tagged, Command extends Tagged>(
 	story: Story<Model, Message, Command>
-): ReadonlyArray<string> =>
-	flatten(layout(story.program, story.steps)).map(
-		(entry) => `${'  '.repeat(entry.depth)}${entry.line}`
-	);
+): ReadonlyArray<string> => told(story).map(line);
 
 /**
  * The step numbers of `units` as they run: a group's own steps, and an `anyOrder` once, by its
@@ -277,7 +277,7 @@ export const run = Effect.fnUntraced(function* <
 	const { program, title } = story;
 	const entries = layout(program, story.steps);
 	const all = flatten(entries);
-	const rules = machine(program, true);
+	const rules = machine(program);
 
 	const fail =
 		(entry: { readonly no: number; readonly line: string }, order: ReadonlyArray<number>) =>
@@ -383,7 +383,7 @@ export const run = Effect.fnUntraced(function* <
 	const initial = yield* Effect.mapError(rules.start(first.step.model), fail(first, []));
 	const reached = yield* go(initial, entries, []);
 	yield* Effect.forEach(reached, finish);
-	const show = describer(program.Model);
+	const show = shower(program.Model);
 	return {
 		finals: Arr.map(reached, ({ state, order }) => ({
 			order,

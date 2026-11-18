@@ -66,7 +66,7 @@ const manual = Decision.make(
 
 ## Running a decision
 
-`Decision.run(decision)` gives `Effect<Decision.Outcome<State>, StoryFailure>`. The outcome is the final state, the same state as a line, and the cases the decision touched: its commands, events, rejections and every state a command's events pass through. Failures have the same shape as a story's ([stories.md](stories.md#failures)).
+`Decision.run(decision)` gives `Effect<Decision.Outcome<State>, StoryFailure>`. The outcome is the final state, the same state as the story record keeps it (a value, [story-record.md](story-record.md#steps-and-values)), and the cases the decision touched: its commands, events, rejections and every state a command's events pass through. Failures have the same shape as a story's ([stories.md](stories.md#failures)).
 
 ## Against a real Store
 

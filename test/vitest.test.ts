@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect } from 'effect';
-import { Decision, Exploration, Story } from 'effect-storytime/testing';
+import { Decision, Exploration, Story, Tale } from 'effect-storytime/testing';
 import { Vitest } from 'effect-storytime/vitest';
 import { chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
@@ -84,16 +84,22 @@ describe('tell', () => {
 				{
 					kind: 'Story',
 					title: 'a question is stopped',
-					lines: Story.lines(stops),
+					steps: Tale.steps(stops),
 					status: 'passed',
 					final: undefined,
-					finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
+					finals: [{ order: [], final: { tag: 'Ready', value: { left: 1, turns: [] } } }],
 					cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
 				},
 				{
 					kind: 'Exploration',
 					title: 'the lamp switches',
-					lines: ['explore 3 runs of up to 5 steps, seed "the lamp switches"'],
+					steps: [
+						{
+							verb: 'explore',
+							label: '3 runs of up to 5 steps, seed "the lamp switches"',
+							values: []
+						}
+					],
 					status: 'passed',
 					final: undefined,
 					finals: undefined,
@@ -110,9 +116,9 @@ describe('tell', () => {
 				{
 					kind: 'Story',
 					title: 'a question is stopped',
-					lines: Story.lines(stops),
+					steps: Tale.steps(stops),
 					status: 'passed',
-					finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
+					finals: [{ order: [], final: { tag: 'Ready', value: { left: 1, turns: [] } } }],
 					cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
 				}
 			]);
@@ -127,7 +133,7 @@ describe('tell', () => {
 				{
 					kind: 'Story',
 					title: 'a question is forgotten',
-					lines: Story.lines(forgets),
+					steps: Tale.steps(forgets),
 					status: 'failed',
 					failure: {
 						step: 3,
@@ -136,7 +142,8 @@ describe('tell', () => {
 						expected: '',
 						actual: 'Ask {"text":"Why?","turn":"t1"}',
 						counterexample: undefined,
-						replay: undefined
+						replay: undefined,
+						code: undefined
 					}
 				}
 			]);
@@ -152,7 +159,7 @@ describe('tell', () => {
 				{
 					kind: 'Decision',
 					title: 'only an active membership is revoked',
-					lines: Decision.lines(revokes),
+					steps: Tale.steps(revokes),
 					status: 'failed',
 					failure: undefined
 				}
@@ -167,9 +174,9 @@ describe('tell', () => {
 				{
 					kind: 'Decision',
 					title: 'only an active membership is revoked',
-					lines: Decision.lines(revokes),
+					steps: Tale.steps(revokes),
 					status: 'passed',
-					final: '{"active":0,"checkedAt":null,"source":"teachable"}',
+					final: { value: { active: 0, checkedAt: null, source: 'teachable' } },
 					finals: undefined,
 					cases: ['Command.Revoke', 'Rejection.NotActive']
 				}

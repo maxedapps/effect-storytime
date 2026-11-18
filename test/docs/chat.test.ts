@@ -162,7 +162,12 @@ describe('chat tales', () => {
 			const { finals, cases } = yield* Story.run(limited);
 			// One final per order; a story without anyOrder has one, with an empty order.
 			expect(finals).toEqual([
-				{ order: [], model: Limited.make({ turns: [] }), final: 'Limited {"turns":[]}' }
+				// `final` is the model as the story record keeps it.
+				{
+					order: [],
+					model: Limited.make({ turns: [] }),
+					final: { tag: 'Limited', value: { turns: [] } }
+				}
 			]);
 			expect(cases).toEqual([
 				'Command.Ask',
@@ -174,9 +179,9 @@ describe('chat tales', () => {
 			]);
 			// With an anyOrder, one final per order, named by the line numbers of its steps as they ran.
 			const { finals: orders } = yield* Story.run(stops);
-			expect(orders.map(({ order, final }) => [order, final])).toEqual([
-				[[5, 6], 'Ready {"left":2,"turns":[]}'],
-				[[6, 5], 'Ready {"left":2,"turns":[]}']
+			expect(orders.map(({ order, model }) => [order, model])).toEqual([
+				[[5, 6], Ready.make({ left: 2, turns: [] })],
+				[[6, 5], Ready.make({ left: 2, turns: [] })]
 			]);
 			// #endregion outcome
 		})

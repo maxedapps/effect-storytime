@@ -2,7 +2,7 @@
 
 `import { Exploration } from 'effect-storytime/testing'`
 
-An exploration generates tales. It checks many random paths through a Program or a Decider with `effect/Arbitrary`, using every strict rule a story or decision runs ([strict-rules.md](strict-rules.md)). The one rule it skips is command assertions: a path asserts no effects, so it owes none. A failing path shrinks to a short story or decision, its counterexample. Write stories and decisions for the behaviour you mean, and an exploration for the rules that must hold whatever happens: Schemas, purity, JSON copies, invariants and the exploration's own properties.
+An exploration generates tales. It checks many random paths through a Program or a Decider with `effect/Arbitrary`, using every strict rule a story or decision runs ([strict-rules.md](strict-rules.md)). A path asserts the commands each step produced right after that step, and names each decided command's events or rejection, so a failing path shrinks to a short story or decision, its counterexample, that runs as one. Write stories and decisions for the behaviour you mean, and an exploration for the rules that must hold whatever happens: Schemas, purity, JSON copies, invariants and the exploration's own properties.
 
 ## Exploring a Program
 
@@ -98,18 +98,21 @@ Stories have no properties: a story asserts each step it means with `model`, `sa
 
 `Exploration.check(exploration, options?)` gives `Effect<Exploration.Explored, StoryFailure>`, where `Explored` is `{ runs, cases }`. `Tale.run` and `Vitest.stories` call it for you.
 
-An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds the fields below, and its `message` shows them: the line that ran, the counterexample with `>` at the failing step, then the replay token. Its stack starts at the `Exploration.make` or `Exploration.decisions` call.
+An exploration's single line names its settings: `explore 100 runs of up to 30 steps, seed "any conversation keeps the chat valid", with restarts`. A failure adds the fields below, and its `message` shows them: the line that ran, the counterexample's lines with `>` at the failing step, the replay token, then the counterexample as code. Its stack starts at the `Exploration.make` or `Exploration.decisions` call.
 
 | Field | Meaning |
 | --- | --- |
 | `line` | The exploration's line as it ran, with the seed and runs it used, or `replay <token>` for a replay. |
-| `counterexample` | The shrunk path as story or decision lines. |
-| `step` | The 1-based number of the failing line in `counterexample`. |
+| `counterexample` | The shrunk path as steps ([story-record.md](story-record.md#steps-and-values)); `StoryRecord.line` shows each as its line. |
+| `step` | The 1-based number of the failing step in `counterexample`. |
 | `replay` | A token for `Exploration.check(exploration, { replay })`, which checks just that path again. |
+| `code` | The counterexample as a `Story.make(...)` or `Decision.make(...)` call to paste into a test. |
 
 [story-record.md](story-record.md) shows a recorded failure. Replay tokens may change between releases of `effect/Arbitrary`.
 
-To debug a counterexample, copy its lines into a story or decision. That gives you a fixed test for the bug, which stays after the fix.
+To debug a counterexample, paste its `code` into a test. It names the subject `program` or `decider` and the step builders `story` or `decision` (`Story.of(program)`, `Decision.of(decider)`), and first declares a decoder for each Schema its values use, such as `const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)))`. Each value is its canonical JSON as its line shows it, decoded back into the value the path had: branded, a class instance, a `Date` or an `Option`. The pasted tale fails at the same step, and it stays as a test for the bug after the fix.
+
+A property is the exploration's own, and tales have none, so a pasted property failure runs to the end: a decision passes, with the failing command's events or rejection named, and a story ends at the failing step, asking for any commands it produced. Assert there what the property checks, with `model`, `state` or `satisfies`.
 
 ## Fresh seeds and more runs
 
@@ -123,7 +126,7 @@ An exploration checks the same paths on every run, so CI stays deterministic but
 
 They win over the exploration's own `seed` and `runs`, and apply wherever an exploration is checked, `covers` included. Any other value fails the check as a defect. Run them locally or in a scheduled CI job, such as `STORYTIME_SEED=random STORYTIME_RUNS=1000 pnpm vitest run`.
 
-A failure's message shows the line that ran, so it names the seed it used: `explore 1000 runs of up to 30 steps, seed 1834212977, with restarts`. Run that again with `STORYTIME_SEED=1834212977 STORYTIME_RUNS=1000` to get the same failure, or use its replay token. The exploration's `lines` and the story record's `lines` keep the settings as written, so the record stays the same whatever the environment; only a failure's `line` shows the overrides. A replay ignores them: it checks the token's one path, and its failure's `line` is `replay <token>`.
+A failure's message shows the line that ran, so it names the seed it used: `explore 1000 runs of up to 30 steps, seed 1834212977, with restarts`. Run that again with `STORYTIME_SEED=1834212977 STORYTIME_RUNS=1000` to get the same failure, or use its replay token. The exploration's `lines` and its step in the story record keep the settings as written, so the record stays the same whatever the environment; only a failure's `line` shows the overrides. A replay ignores them: it checks the token's one path, and its failure's `line` is `replay <token>`.
 
 To set them from code, as in a test of your own, provide a `ConfigProvider` such as `ConfigProvider.fromEnv({ env: { STORYTIME_SEED: 'random' } })` to the Effect that checks the exploration.
 

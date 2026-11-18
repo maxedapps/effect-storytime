@@ -6,6 +6,8 @@
 import { Effect, Predicate, Record, Schema } from 'effect';
 import type { Decider } from '../Decider.ts';
 import { Problem, role, untouched } from './internal/check.ts';
+import { line } from './internal/steps.ts';
+import type { Step } from './internal/steps.ts';
 import { TypeId } from './internal/tale.ts';
 import type { Tale } from './internal/tale.ts';
 import type { Invariants, Program, Tagged } from '../Program.ts';
@@ -13,8 +15,11 @@ import type { StoryFailure } from './Story.ts';
 
 export type { Reached, Tale } from './internal/tale.ts';
 
+/** Any tale's steps as data: what records keep and Markdown pages show. */
+export const steps = (tale: Tale): ReadonlyArray<Step> => tale[TypeId]().steps;
+
 /** Renders any tale as its plain lines. */
-export const lines = (tale: Tale): ReadonlyArray<string> => tale[TypeId]().lines;
+export const lines = (tale: Tale): ReadonlyArray<string> => steps(tale).map(line);
 
 /** Runs any tale in memory. */
 export const run = (tale: Tale) => tale[TypeId]().run;

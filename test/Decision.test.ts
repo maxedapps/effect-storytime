@@ -51,7 +51,7 @@ const lifecycle = Decision.make(
 const inactive: Membership = { source: 'teachable', active: false, checkedAt: later };
 const reachedInactive = {
 	state: inactive,
-	final: '{"active":0,"checkedAt":"2026-11-04T00:00:00.000Z","source":"teachable"}',
+	final: { value: { active: 0, checkedAt: '2026-11-04T00:00:00.000Z', source: 'teachable' } },
 	cases: [
 		'Command.Check',
 		'Command.Grant',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Arbitrary, Effect, Schema, SchemaTransformation } from 'effect';
 import { Program } from 'effect-storytime';
-import { Exploration, Story } from 'effect-storytime/testing';
+import { Exploration, Story, StoryRecord } from 'effect-storytime/testing';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Conversation from './examples/conversation.ts';
 import * as Lamp from './examples/lamp.ts';
@@ -62,8 +62,13 @@ describe('Story', () => {
 				{
 					order: [],
 					model: Chat.cases.Ready.make({ turns: [turn], left: 1 }),
-					final:
-						'Ready {"left":1,"turns":[{"answer":"Typed errors.","id":"t1","question":"Why Effect?"}]}'
+					final: {
+						tag: 'Ready',
+						value: {
+							left: 1,
+							turns: [{ answer: 'Typed errors.', id: 't1', question: 'Why Effect?' }]
+						}
+					}
 				}
 			]);
 			expect(outcome.cases).toEqual([
@@ -511,13 +516,11 @@ describe('Story', () => {
 						})
 					)
 				);
-				expect(explored).toMatchObject({
-					problem: produced.problem,
-					counterexample: [
-						'given {"value":0}',
-						'send Switched {"at":"2026-11-04T00:00:00.000Z","by":1}'
-					]
-				});
+				expect(explored.problem).toBe(produced.problem);
+				expect(explored.counterexample?.map(StoryRecord.line)).toEqual([
+					'given {"value":0}',
+					'send Switched {"at":"2026-11-04T00:00:00.000Z","by":1}'
+				]);
 				expect(explored.replay).toBeTypeOf('string');
 			})
 		);
@@ -919,12 +922,12 @@ describe('Story', () => {
 						{
 							order: [3, 4],
 							model: { on: false, at, count: 0 },
-							final: '{"at":"2026-11-04T00:00:00.000Z","count":0,"on":0}'
+							final: { value: { at: '2026-11-04T00:00:00.000Z', count: 0, on: 0 } }
 						},
 						{
 							order: [4, 3],
 							model: { on: false, at, count: 1 },
-							final: '{"at":"2026-11-04T00:00:00.000Z","count":1,"on":0}'
+							final: { value: { at: '2026-11-04T00:00:00.000Z', count: 1, on: 0 } }
 						}
 					],
 					cases: ['Message.Switched']

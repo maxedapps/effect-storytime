@@ -36,6 +36,10 @@ const scratch = Effect.acquireRelease(
 	(dir) => Effect.promise(() => rm(dir, { recursive: true }))
 );
 
+/** A report with one story of these steps, as JSON text. */
+const story = (steps: string) =>
+	`{"version":4,"stories":[{"kind":"Story","title":"t","file":"f","test":"t","status":"passed","steps":[${steps}]}]}`;
+
 describe('Vitest.Reporter', () => {
 	it.effect(
 		'writes every told tale, sorted, the same whatever order they were told in',
@@ -56,17 +60,28 @@ describe('Vitest.Reporter', () => {
 
 	it.effect('reads back only a report of a version it knows', () =>
 		Effect.gen(function* () {
-			const failure = yield* Effect.flip(StoryRecord.decode('{"version":2,"stories":[]}'));
-			expect(failure.message).toBe('Expected 3\n  at ["version"]');
+			const failure = yield* Effect.flip(StoryRecord.decode('{"version":3,"stories":[]}'));
+			expect(failure.message).toBe('Expected 4\n  at ["version"]');
 		})
 	);
 
 	it.effect('reads back only records it knows', () =>
 		Effect.gen(function* () {
 			const failure = yield* Effect.flip(
-				StoryRecord.decode('{"version":3,"stories":[{"kind":"Saga"}]}')
+				StoryRecord.decode('{"version":4,"stories":[{"kind":"Saga"}]}')
 			);
 			expect(failure.message).toContain('at ["stories"][0]["kind"]');
+		})
+	);
+
+	it.effect('reads back only steps and values it knows', () =>
+		Effect.gen(function* () {
+			const verb = yield* Effect.flip(StoryRecord.decode(story('{"verb":"shout","values":[]}')));
+			expect(verb.message).toContain('at ["stories"][0]["steps"][0]["verb"]');
+			const tag = yield* Effect.flip(
+				StoryRecord.decode(story('{"verb":"send","values":[{"tag":1}]}'))
+			);
+			expect(tag.message).toContain('at ["stories"][0]["steps"][0]["values"][0]["tag"]');
 		})
 	);
 });

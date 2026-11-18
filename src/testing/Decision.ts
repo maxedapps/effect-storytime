@@ -6,13 +6,15 @@
 import { Array as Arr, Data, Effect, Option, Ref, Result } from 'effect';
 import type { Context } from 'effect';
 import type { Decider, Store } from '../Decider.ts';
-import { describer } from '../internal/canonical.ts';
+import { shower } from '../internal/canonical.ts';
 import { Problem } from './internal/check.ts';
 import type { Tagged } from '../Program.ts';
 import { caser, checks, strict } from './internal/decider.ts';
 import type { Decided } from './internal/decider.ts';
 import { decideIn, loadOrInitial } from '../internal/transition.ts';
 import type { Transition } from '../internal/transition.ts';
+import { line, say } from './internal/steps.ts';
+import type { Step as StepData, Value } from './internal/steps.ts';
 import { located, made, TypeId } from './internal/tale.ts';
 import type { Told } from './internal/tale.ts';
 import { StoryFailure } from './Story.ts';
@@ -71,7 +73,7 @@ export class Decision<State, Command extends Tagged, Event, Rejection> extends D
 	readonly steps: ReadonlyArray<Step<State, Command, Event, Rejection>>;
 }> {
 	[TypeId](): Told {
-		return { subject: this.decider, lines: lines(this), run: run(this) };
+		return { subject: this.decider, steps: told(this), run: run(this) };
 	}
 }
 
@@ -82,36 +84,40 @@ export const make = <State, Command extends Tagged, Event, Rejection>(
 ): Decision<State, Command, Event, Rejection> =>
 	made(new Decision({ title, decider, steps: body }), make);
 
-/** What a passing decision reached: its final state, also as a line, and the cases it touched. */
+/** What a passing decision reached: its final state, also as data, and the cases it touched. */
 export interface Outcome<State> {
 	readonly state: State;
-	readonly final: string;
+	readonly final: Value;
 	readonly cases: ReadonlyArray<string>;
 }
 
-const liner = <State, Command extends Tagged, Event, Rejection>(
+const sayer = <State, Command extends Tagged, Event, Rejection>(
 	decider: Decider<State, Command, Event, Rejection>
 ) => {
-	const showState = describer(decider.State);
-	const showCommand = describer(decider.Command);
-	const showEvent = describer(decider.Event);
-	const showRejection = describer(decider.Rejection);
-	return (step: Step<State, Command, Event, Rejection>) =>
+	const state = shower(decider.State);
+	const command = shower(decider.Command);
+	const event = shower(decider.Event);
+	const rejection = shower(decider.Rejection);
+	return (step: Step<State, Command, Event, Rejection>): StepData =>
 		Step.$match(step, {
-			Given: ({ state: start }) => `given ${showState(start)}`,
-			When: ({ command }) => `when ${showCommand(command)}`,
-			Accepted: ({ events }) =>
-				`accepted ${events.length === 0 ? 'none' : events.map(showEvent).join(', ')}`,
-			Rejected: ({ rejection }) => `rejected ${showRejection(rejection)}`,
-			State: ({ expected }) => `state ${showState(expected)}`,
-			Satisfies: ({ label }) => `satisfies ${label}`
+			Given: ({ state: start }) => say('given', 0, [state(start)]),
+			When: ({ command: sent }) => say('when', 0, [command(sent)]),
+			Accepted: ({ events }) => say('accepted', 0, events.map(event)),
+			Rejected: ({ rejection: given }) => say('rejected', 0, [rejection(given)]),
+			State: ({ expected }) => say('state', 0, [state(expected)]),
+			Satisfies: ({ label }) => say('satisfies', 0, [], label)
 		});
 };
+
+/** What a decision says, step by step, from its value alone. */
+const told = <State, Command extends Tagged, Event, Rejection>(
+	decision: Decision<State, Command, Event, Rejection>
+): ReadonlyArray<StepData> => decision.steps.map(sayer(decision.decider));
 
 /** Renders a decision as plain lines, from its value alone. */
 export const lines = <State, Command extends Tagged, Event, Rejection>(
 	decision: Decision<State, Command, Event, Rejection>
-): ReadonlyArray<string> => decision.steps.map(liner(decision.decider));
+): ReadonlyArray<string> => told(decision).map(line);
 
 /** Where a decision's state lives, in memory or in a Store, checked by the strict rules either way. */
 interface Backend<State, Command, Event, Rejection, E> {
@@ -130,7 +136,8 @@ const tell = Effect.fnUntraced(function* <State, Command extends Tagged, Event, 
 	backend: Backend<State, Command, Event, Rejection, E>
 ): Effect.fn.Return<Outcome<State>, StoryFailure | E> {
 	const { decider, title } = decision;
-	const line = liner(decider);
+	const data = sayer(decider);
+	const lined = (step: Step<State, Command, Event, Rejection>) => line(data(step));
 	const the = checks(decider);
 	const touch = caser(decider);
 	const touched = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -280,7 +287,7 @@ const tell = Effect.fnUntraced(function* <State, Command extends Tagged, Event, 
 
 	const [first] = decision.steps;
 	if (!Step.$is('Given')(first)) {
-		return yield* fail({ no: 1, line: first === undefined ? '' : line(first) })(
+		return yield* fail({ no: 1, line: first === undefined ? '' : lined(first) })(
 			new Problem({ message: 'a decision starts with given(state)' })
 		);
 	}
@@ -291,7 +298,7 @@ const tell = Effect.fnUntraced(function* <State, Command extends Tagged, Event, 
 			Effect.catchIf(effect, isProblem, (problem) => Effect.fail(fail(entry)(problem)));
 	let decided = Option.none<Decided<Event, Rejection>>();
 	for (const [index, next] of decision.steps.entries()) {
-		decided = yield* step(index, decided, next).pipe(at({ no: index + 1, line: line(next) }));
+		decided = yield* step(index, decided, next).pipe(at({ no: index + 1, line: lined(next) }));
 	}
 	const end = { no: decision.steps.length + 1, line: 'end' };
 	if (Option.isSome(decided)) {
@@ -300,7 +307,7 @@ const tell = Effect.fnUntraced(function* <State, Command extends Tagged, Event, 
 	const reached = yield* backend.current.pipe(at(end));
 	return {
 		state: reached,
-		final: the.state.show(reached),
+		final: shower(decider.State)(reached),
 		cases: Arr.dedupe(yield* Ref.get(touched)).toSorted()
 	};
 });

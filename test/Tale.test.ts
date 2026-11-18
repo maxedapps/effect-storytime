@@ -67,7 +67,9 @@ describe('Tale', () => {
 		Effect.gen(function* () {
 			expect(Tale.lines(stops)).toEqual(Story.lines(stops));
 			expect(yield* Tale.run(stops)).toEqual({
-				finals: [{ order: [], final: 'Ready {"left":1,"turns":[]}' }],
+				finals: [
+					{ order: [], model: ready(1), final: { tag: 'Ready', value: { left: 1, turns: [] } } }
+				],
 				cases: ['Command.Ask', 'Message.Asked', 'Message.Stopped', 'Model.Asking', 'Model.Ready']
 			});
 			expect(Tale.lines(switches)).toEqual(Exploration.lines(switches));

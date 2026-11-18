@@ -1,13 +1,17 @@
 {
-	"version": 3,
+	"version": 4,
 	"stories": [
 		{
 			"kind": "Exploration",
 			"title": "the lamp counts switches",
 			"file": "checks/lamp.stories.ts",
 			"test": "the lamp counts switches",
-			"lines": [
-				"explore 100 runs of up to 30 steps, seed \"the lamp counts switches\", with restarts"
+			"steps": [
+				{
+					"verb": "explore",
+					"label": "100 runs of up to 30 steps, seed \"the lamp counts switches\", with restarts",
+					"values": []
+				}
 			],
 			"status": "failed",
 			"failure": {
@@ -16,10 +20,33 @@
 				"problem": "invariant countIsSmall does not hold",
 				"actual": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":10,\"on\":1}",
 				"counterexample": [
-					"given {\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}",
-					"send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":10}"
+					{
+						"verb": "given",
+						"values": [
+							{
+								"value": {
+									"at": "2026-11-03T00:00:00.000Z",
+									"count": 0,
+									"on": 0
+								}
+							}
+						]
+					},
+					{
+						"verb": "send",
+						"values": [
+							{
+								"tag": "Switched",
+								"value": {
+									"at": "2026-11-04T00:00:00.000Z",
+									"by": 10
+								}
+							}
+						]
+					}
 				],
-				"replay": "[1,\"the lamp counts switches\",13,4,[1,3,2],\"PropertyError\"]"
+				"replay": "[1,\"the lamp counts switches\",13,4,[1,3,2],\"PropertyError\"]",
+				"code": "const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));\nconst message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));\nStory.make(\n\t\"the lamp counts switches\",\n\tprogram,\n\tstory.given(model('{\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}')),\n\tstory.send(message('{\"_tag\":\"Switched\",\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":10}'))\n)"
 			}
 		},
 		{
@@ -27,12 +54,54 @@
 			"title": "two switches leave the lamp off, in either order",
 			"file": "checks/lamp.stories.ts",
 			"test": "two switches leave the lamp off, in either order",
-			"lines": [
-				"given {\"at\":\"2026-11-03T00:00:00.000Z\",\"count\":0,\"on\":0}",
-				"any order",
-				"  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":1}",
-				"  send Switched {\"at\":\"2026-11-04T00:00:00.000Z\",\"by\":2}",
-				"satisfies off"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"value": {
+								"at": "2026-11-03T00:00:00.000Z",
+								"count": 0,
+								"on": 0
+							}
+						}
+					]
+				},
+				{
+					"verb": "any order",
+					"values": []
+				},
+				{
+					"verb": "send",
+					"depth": 1,
+					"values": [
+						{
+							"tag": "Switched",
+							"value": {
+								"at": "2026-11-04T00:00:00.000Z",
+								"by": 1
+							}
+						}
+					]
+				},
+				{
+					"verb": "send",
+					"depth": 1,
+					"values": [
+						{
+							"tag": "Switched",
+							"value": {
+								"at": "2026-11-04T00:00:00.000Z",
+								"by": 2
+							}
+						}
+					]
+				},
+				{
+					"verb": "satisfies",
+					"label": "off",
+					"values": []
+				}
 			],
 			"status": "passed",
 			"finals": [
@@ -41,14 +110,26 @@
 						3,
 						4
 					],
-					"final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}"
+					"final": {
+						"value": {
+							"at": "2026-11-04T00:00:00.000Z",
+							"count": 3,
+							"on": 0
+						}
+					}
 				},
 				{
 					"order": [
 						4,
 						3
 					],
-					"final": "{\"at\":\"2026-11-04T00:00:00.000Z\",\"count\":3,\"on\":0}"
+					"final": {
+						"value": {
+							"at": "2026-11-04T00:00:00.000Z",
+							"count": 3,
+							"on": 0
+						}
+					}
 				}
 			],
 			"cases": [
@@ -60,13 +141,44 @@
 			"title": "only an active membership is revoked",
 			"file": "checks/membership.stories.ts",
 			"test": "only an active membership is revoked",
-			"lines": [
-				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
-				"when Revoke",
-				"rejected NotActive"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"value": {
+								"active": 0,
+								"checkedAt": null,
+								"source": "teachable"
+							}
+						}
+					]
+				},
+				{
+					"verb": "when",
+					"values": [
+						{
+							"tag": "Revoke"
+						}
+					]
+				},
+				{
+					"verb": "rejected",
+					"values": [
+						{
+							"tag": "NotActive"
+						}
+					]
+				}
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"final": {
+				"value": {
+					"active": 0,
+					"checkedAt": null,
+					"source": "teachable"
+				}
+			},
 			"cases": [
 				"Command.Revoke",
 				"Rejection.NotActive"
@@ -77,11 +189,28 @@
 			"title": "a membership starts inactive",
 			"file": "checks/membership.stories.ts",
 			"test": "tells tales in any order",
-			"lines": [
-				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"value": {
+								"active": 0,
+								"checkedAt": null,
+								"source": "teachable"
+							}
+						}
+					]
+				}
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"final": {
+				"value": {
+					"active": 0,
+					"checkedAt": null,
+					"source": "teachable"
+				}
+			},
 			"cases": []
 		},
 		{
@@ -89,10 +218,35 @@
 			"title": "only an active membership is revoked",
 			"file": "checks/membership.stories.ts",
 			"test": "tells tales in any order",
-			"lines": [
-				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
-				"when Revoke",
-				"rejected NotActive"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"value": {
+								"active": 0,
+								"checkedAt": null,
+								"source": "teachable"
+							}
+						}
+					]
+				},
+				{
+					"verb": "when",
+					"values": [
+						{
+							"tag": "Revoke"
+						}
+					]
+				},
+				{
+					"verb": "rejected",
+					"values": [
+						{
+							"tag": "NotActive"
+						}
+					]
+				}
 			],
 			"status": "failed"
 		},
@@ -101,13 +255,44 @@
 			"title": "only an active membership is revoked",
 			"file": "checks/membership.stories.ts",
 			"test": "tells tales in any order",
-			"lines": [
-				"given {\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
-				"when Revoke",
-				"rejected NotActive"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"value": {
+								"active": 0,
+								"checkedAt": null,
+								"source": "teachable"
+							}
+						}
+					]
+				},
+				{
+					"verb": "when",
+					"values": [
+						{
+							"tag": "Revoke"
+						}
+					]
+				},
+				{
+					"verb": "rejected",
+					"values": [
+						{
+							"tag": "NotActive"
+						}
+					]
+				}
 			],
 			"status": "passed",
-			"final": "{\"active\":0,\"checkedAt\":null,\"source\":\"teachable\"}",
+			"final": {
+				"value": {
+					"active": 0,
+					"checkedAt": null,
+					"source": "teachable"
+				}
+			},
 			"cases": [
 				"Command.Revoke",
 				"Rejection.NotActive"
@@ -118,10 +303,35 @@
 			"title": "a question is forgotten",
 			"file": "stories/chat.stories.ts",
 			"test": "chat > a question is forgotten",
-			"lines": [
-				"given Ready {\"left\":1,\"turns\":[]}",
-				"send Asked {\"text\":\"Why?\",\"turn\":\"t1\"}",
-				"commands none"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"tag": "Ready",
+							"value": {
+								"left": 1,
+								"turns": []
+							}
+						}
+					]
+				},
+				{
+					"verb": "send",
+					"values": [
+						{
+							"tag": "Asked",
+							"value": {
+								"text": "Why?",
+								"turn": "t1"
+							}
+						}
+					]
+				},
+				{
+					"verb": "commands",
+					"values": []
+				}
 			],
 			"status": "failed",
 			"failure": {
@@ -137,17 +347,63 @@
 			"title": "a question is stopped",
 			"file": "stories/chat.stories.ts",
 			"test": "chat > a question is stopped",
-			"lines": [
-				"given Ready {\"left\":1,\"turns\":[]}",
-				"send Asked {\"text\":\"Why?\",\"turn\":\"t1\"}",
-				"commands Ask {\"text\":\"Why?\",\"turn\":\"t1\"}",
-				"send Stopped"
+			"steps": [
+				{
+					"verb": "given",
+					"values": [
+						{
+							"tag": "Ready",
+							"value": {
+								"left": 1,
+								"turns": []
+							}
+						}
+					]
+				},
+				{
+					"verb": "send",
+					"values": [
+						{
+							"tag": "Asked",
+							"value": {
+								"text": "Why?",
+								"turn": "t1"
+							}
+						}
+					]
+				},
+				{
+					"verb": "commands",
+					"values": [
+						{
+							"tag": "Ask",
+							"value": {
+								"text": "Why?",
+								"turn": "t1"
+							}
+						}
+					]
+				},
+				{
+					"verb": "send",
+					"values": [
+						{
+							"tag": "Stopped"
+						}
+					]
+				}
 			],
 			"status": "passed",
 			"finals": [
 				{
 					"order": [],
-					"final": "Ready {\"left\":1,\"turns\":[]}"
+					"final": {
+						"tag": "Ready",
+						"value": {
+							"left": 1,
+							"turns": []
+						}
+					}
 				}
 			],
 			"cases": [

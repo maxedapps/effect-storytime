@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
-import { Arbitrary, ConfigProvider, Effect, Exit, Random, Result, Schema } from 'effect';
+import { Arbitrary, ConfigProvider, Effect, Exit, Option, Random, Result, Schema } from 'effect';
 import { Decider, Program } from 'effect-storytime';
-import { Exploration, Story } from 'effect-storytime/testing';
+import { Decision, Exploration, Story, StoryRecord, Tale } from 'effect-storytime/testing';
 import { Chat, chat, Command, Message, ready } from './examples/chat.ts';
 import * as Lamp from './examples/lamp.ts';
 import {
@@ -19,6 +19,9 @@ const off = Arbitrary.Constant(Lamp.off);
 const switches = Arbitrary.map(Arbitrary.schema(Schema.Int), Lamp.switched);
 const given = 'given {"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}';
 const sent = (by: number) => `send Switched {"at":"2026-11-04T00:00:00.000Z","by":${by}}`;
+
+/** A failure's counterexample as lines. */
+const told = (failure: Story.StoryFailure) => failure.counterexample?.map(StoryRecord.line);
 
 const counts = Exploration.make('the lamp counts switches', Lamp.lamp, {
 	given: off,
@@ -62,6 +65,106 @@ const resuming = (resume: (current: Lamp.Lamp) => Program.Next<Lamp.Lamp, Lamp.C
 		invariants: Lamp.lamp.invariants
 	});
 
+/** The lamp failure's code, pasted into a test module. */
+const pastedLamp = () => {
+	const program = Lamp.lamp;
+	const story = Story.of(program);
+	const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));
+	const message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));
+	return Story.make(
+		'the lamp counts switches',
+		program,
+		story.given(model('{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}')),
+		story.send(message('{"_tag":"Switched","at":"2026-11-04T00:00:00.000Z","by":10}'))
+	);
+};
+
+/** A counter whose model is a class with a branded id. */
+const CounterId = Schema.String.pipe(Schema.brand('CounterId'));
+class Counter extends Schema.Class<Counter>('Counter')({ id: CounterId, n: Schema.Int }) {}
+const Bumps = Schema.TaggedUnion({ Bumped: {} });
+const counter = Program.make({
+	Model: Counter,
+	Message: Bumps,
+	Command: Bumps,
+	update: (current: Counter) => ({
+		model: new Counter({ id: current.id, n: current.n + 1 })
+	}),
+	invariants: { small: (current) => current.n < 2 }
+});
+
+/** The counter failure's code, pasted: tsc checks that it makes the branded Counter the builders take. */
+const pastedCounter = () => {
+	const program = counter;
+	const story = Story.of(program);
+	const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));
+	const message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));
+	return Story.make(
+		'a counter stays small',
+		program,
+		story.given(model('{"id":"c1","n":0}')),
+		story.send(message('{"_tag":"Bumped"}')),
+		story.send(message('{"_tag":"Bumped"}'))
+	);
+};
+
+/**
+ * A tally whose state holds values JSON has no literal for, and keys no identifier spells, and whose
+ * event is no object.
+ */
+const Tally = Schema.Struct({
+	'left-over': Schema.BigInt,
+	'1st': Schema.Option(Schema.String),
+	none: Schema.Option(Schema.String),
+	// Non-finite on purpose: JSON has no Infinity or NaN, their codec's JSON strings do.
+	// oxlint-disable-next-line effecttsgo/schema-number
+	ratio: Schema.Number,
+	// oxlint-disable-next-line effecttsgo/schema-number
+	grid: Schema.Array(Schema.Array(Schema.Number)),
+	note: Schema.optional(Schema.String),
+	gaps: Schema.Array(Schema.UndefinedOr(Schema.String)),
+	empty: Schema.Struct({})
+});
+const Resets = Schema.TaggedUnion({ Reset: {} });
+const tally = Decider.make({
+	State: Tally,
+	Command: Resets,
+	Event: Schema.Array(Schema.Int),
+	Rejection: Resets,
+	initial: {
+		'left-over': 2n,
+		'1st': Option.some(`it's "a"`),
+		none: Option.none(),
+		ratio: Number.POSITIVE_INFINITY,
+		grid: [[1, Number.NaN], []],
+		note: undefined,
+		gaps: [undefined, 'b'],
+		empty: {}
+	},
+	decide: { Reset: () => Result.succeed([[1, 2]]) },
+	evolve: (current) => current
+});
+
+/** The tally failure's code, pasted. */
+const pastedTally = () => {
+	const decider = tally;
+	const decision = Decision.of(decider);
+	const state = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.State)));
+	const command = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Command)));
+	const event = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Event)));
+	return Decision.make(
+		'a tally never resets',
+		decider,
+		decision.given(
+			state(
+				'{"1st":{"_tag":"Some","value":"it\'s \\"a\\""},"empty":{},"gaps":[null,"b"],"grid":[[1,"NaN"],[]],"left-over":"2","none":{"_tag":"None"},"note":null,"ratio":"Infinity"}'
+			)
+		),
+		decision.when(command('{"_tag":"Reset"}')),
+		decision.accepted(event('[1,2]'))
+	);
+};
+
 describe('Exploration', () => {
 	it('renders as one line naming its runs, steps, seed and restarts', () => {
 		expect(Exploration.lines(counts)).toEqual([
@@ -91,10 +194,89 @@ describe('Exploration', () => {
 					problem: 'invariant countIsSmall does not hold',
 					expected: undefined,
 					actual: '{"at":"2026-11-04T00:00:00.000Z","count":10,"on":1}',
-					counterexample: [given, sent(10)],
-					replay: failure.replay ?? ''
+					counterexample: failure.counterexample,
+					replay: failure.replay ?? '',
+					code: failure.code
 				})
 			);
+			expect(told(failure)).toEqual([given, sent(10)]);
+		})
+	);
+
+	it.effect('prints the counterexample as a story that fails at the same step', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(Exploration.check(counts));
+			expect(failure.code).toBe(
+				[
+					'const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));',
+					'const message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));',
+					'Story.make(',
+					'\t"the lamp counts switches",',
+					'\tprogram,',
+					'\tstory.given(model(\'{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0}\')),',
+					'\tstory.send(message(\'{"_tag":"Switched","at":"2026-11-04T00:00:00.000Z","by":10}\'))',
+					')'
+				].join('\n')
+			);
+			expect(failure.message).toBe(
+				[
+					'invariant countIsSmall does not hold',
+					'explore 100 runs of up to 30 steps, seed "the lamp counts switches", with restarts',
+					'step 2 of the counterexample:',
+					`  1 ${given}`,
+					`> 2 ${sent(10)}`,
+					'actual: {"at":"2026-11-04T00:00:00.000Z","count":10,"on":1}',
+					`replay: ${failure.replay ?? ''}`,
+					'as code:',
+					failure.code ?? ''
+				].join('\n')
+			);
+			expect(yield* Effect.flip(Story.run(pastedLamp()))).toMatchObject({
+				step: failure.step,
+				problem: failure.problem
+			});
+		})
+	);
+
+	it.effect('prints code that remakes branded and class values as the tale had them', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.make('a counter stays small', counter, {
+						given: Arbitrary.Constant(new Counter({ id: CounterId.make('c1'), n: 0 })),
+						send: Arbitrary.Constant(Bumps.cases.Bumped.make({}))
+					})
+				)
+			);
+			expect(failure.code).toBe(
+				[
+					'const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));',
+					'const message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));',
+					'Story.make(',
+					'\t"a counter stays small",',
+					'\tprogram,',
+					'\tstory.given(model(\'{"id":"c1","n":0}\')),',
+					'\tstory.send(message(\'{"_tag":"Bumped"}\')),',
+					'\tstory.send(message(\'{"_tag":"Bumped"}\'))',
+					')'
+				].join('\n')
+			);
+			// The run needs a Counter, not an object shaped like one.
+			expect(yield* Effect.flip(Story.run(pastedCounter()))).toMatchObject({
+				step: failure.step,
+				problem: failure.problem
+			});
+		})
+	);
+
+	it.effect('asserts no commands after a step that produced none', () =>
+		Effect.gen(function* () {
+			const fives = Exploration.make('fives', Lamp.lamp, {
+				given: off,
+				send: Arbitrary.Constant(Lamp.switched(5))
+			});
+			const failure = yield* Effect.flip(Exploration.check(fives));
+			expect(told(failure)).toEqual([given, sent(5), sent(5)]);
 		})
 	);
 
@@ -109,7 +291,7 @@ describe('Exploration', () => {
 					}
 				)
 			);
-			expect(replayed.counterexample).toEqual([given, sent(10)]);
+			expect(told(replayed)).toEqual([given, sent(10)]);
 			expect(replayed.replay).toBe(failure.replay);
 		})
 	);
@@ -142,7 +324,7 @@ describe('Exploration', () => {
 			const failure = yield* Effect.flip(
 				Exploration.check(Exploration.make('throws', throwing, { given: off, send: switches }))
 			);
-			expect(failure.counterexample).toEqual([given, sent(3)]);
+			expect(told(failure)).toEqual([given, sent(3)]);
 			expect(failure.message).toBe(
 				[
 					'update threw: Error: three',
@@ -150,7 +332,9 @@ describe('Exploration', () => {
 					'step 2 of the counterexample:',
 					`  1 ${given}`,
 					`> 2 ${sent(3)}`,
-					'replay: [1,"throws",8,2,[1],"PropertyError"]'
+					'replay: [1,"throws",8,2,[1],"PropertyError"]',
+					'as code:',
+					failure.code ?? ''
 				].join('\n')
 			);
 		})
@@ -165,7 +349,7 @@ describe('Exploration', () => {
 			const mutates = Exploration.make('mutates', mutating, { given: off, send: switches });
 			const failure = yield* Effect.flip(Exploration.check(mutates));
 			expect(failure.problem).toBe('update changed its input');
-			expect(failure.counterexample?.[0]).toBe(given);
+			expect(told(failure)?.[0]).toBe(given);
 			const replayed = yield* Effect.flip(
 				Exploration.check(mutates, { replay: failure.replay ?? '' })
 			);
@@ -191,7 +375,7 @@ describe('Exploration', () => {
 			});
 			const failure = yield* Effect.flip(Exploration.check(mutates));
 			expect(failure.problem).toBe('update changed its input');
-			expect(failure.counterexample?.[0]).toBe('given {"nested":{"count":0}}');
+			expect(told(failure)?.[0]).toBe('given {"nested":{"count":0}}');
 			expect(start).toEqual({ nested: { count: 0 } });
 			const replayed = yield* Effect.flip(
 				Exploration.check(mutates, { replay: failure.replay ?? '' })
@@ -224,9 +408,10 @@ describe('Exploration', () => {
 					})
 				)
 			);
-			expect(failure.counterexample).toEqual([
+			expect(told(failure)).toEqual([
 				'given {"last":0}',
 				'send Asked',
+				'commands Ask',
 				'resolve Ask → Replied {"n":8}'
 			]);
 		})
@@ -247,13 +432,36 @@ describe('Exploration', () => {
 		})
 	);
 
+	it.effect('prints a value without JSON as a comment saying why', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.make('starts wrong', Lamp.lamp, {
+						given: Arbitrary.Constant({ ...Lamp.off, at: new Date(Number.NaN) }),
+						send: Arbitrary.Constant(Lamp.switched())
+					})
+				)
+			);
+			expect(failure.code).toBe(
+				[
+					'const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));',
+					'Story.make(',
+					'\t"starts wrong",',
+					'\tprogram,',
+					'\tstory.given(model(/* not JSON: Expected a valid Date at ["at"] */))',
+					')'
+				].join('\n')
+			);
+		})
+	);
+
 	it.effect('restarts paths only when asked', () =>
 		Effect.gen(function* () {
 			const broken = resuming((current) => ({ model: { ...current, count: 10 } }));
 			const failure = yield* Effect.flip(
 				Exploration.check(Exploration.make('restarts', broken, { given: off, send: switches }))
 			);
-			expect(failure.counterexample).toEqual([given, 'restart']);
+			expect(told(failure)).toEqual([given, 'restart']);
 			expect(
 				yield* Exploration.check(
 					Exploration.make('stays up', broken, {
@@ -311,13 +519,33 @@ describe('Exploration', () => {
 				}
 			});
 			const failure = yield* Effect.flip(Exploration.check(talks(strict, { runs: 400 })));
-			expect(failure.step).toBe(5);
-			expect(failure.counterexample).toEqual([
+			expect(failure.step).toBe(8);
+			expect(told(failure)).toEqual([
 				'given Ready {"left":2,"turns":[]}',
 				'send Asked {"text":"question t1","turn":"t1"}',
+				'commands Ask {"text":"question t1","turn":"t1"}',
 				'resolve Ask {"text":"question t1","turn":"t1"} → Answered {"left":1,"turn":"t1"}',
+				'commands SaveTurn {"answer":"","id":"t1","question":"question t1"}',
 				'send Asked {"text":"question t2","turn":"t2"}',
+				'commands SaveTurn {"answer":"","id":"t1","question":"question t1"}, Ask {"text":"question t2","turn":"t2"}',
 				'emit Ask {"text":"question t2","turn":"t2"} → Delta {"text":"hi","turn":"t2"}'
+			]);
+			expect(failure.code?.split('\n')).toEqual([
+				'const model = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Model)));',
+				'const message = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Message)));',
+				'const command = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(program.Command)));',
+				'Story.make(',
+				'\t"a chat talks",',
+				'\tprogram,',
+				`\tstory.given(model('{"_tag":"Ready","left":2,"turns":[]}')),`,
+				`\tstory.send(message('{"_tag":"Asked","text":"question t1","turn":"t1"}')),`,
+				`\tstory.commands(command('{"_tag":"Ask","text":"question t1","turn":"t1"}')),`,
+				`\tstory.resolve(command('{"_tag":"Ask","text":"question t1","turn":"t1"}'), message('{"_tag":"Answered","left":1,"turn":"t1"}')),`,
+				`\tstory.commands(command('{"_tag":"SaveTurn","answer":"","id":"t1","question":"question t1"}')),`,
+				`\tstory.send(message('{"_tag":"Asked","text":"question t2","turn":"t2"}')),`,
+				`\tstory.commands(command('{"_tag":"SaveTurn","answer":"","id":"t1","question":"question t1"}'), command('{"_tag":"Ask","text":"question t2","turn":"t2"}')),`,
+				`\tstory.emit(command('{"_tag":"Ask","text":"question t2","turn":"t2"}'), message('{"_tag":"Delta","text":"hi","turn":"t2"}'))`,
+				')'
 			]);
 		})
 	);
@@ -342,14 +570,16 @@ describe('Exploration', () => {
 						'"before":{"at":"2026-11-03T00:00:00.000Z","count":0,"on":0},' +
 						'"cancels":[],"commands":[],' +
 						'"message":{"_tag":"Switched","at":"2026-11-04T00:00:00.000Z","by":-1}}',
-					counterexample: [given, sent(-1)],
-					replay: failure.replay ?? ''
+					counterexample: failure.counterexample,
+					replay: failure.replay ?? '',
+					code: failure.code
 				})
 			);
+			expect(told(failure)).toEqual([given, sent(-1)]);
 			const replayed = yield* Effect.flip(
 				Exploration.check(countsUp, { replay: failure.replay ?? '' })
 			);
-			expect(replayed.counterexample).toEqual([given, sent(-1)]);
+			expect(told(replayed)).toEqual([given, sent(-1)]);
 		})
 	);
 
@@ -413,21 +643,22 @@ describe('Exploration', () => {
 				)
 			);
 			expect(failure.problem).toBe('property small threw: Error: too far');
-			expect(failure.counterexample).toEqual([given, sent(3)]);
+			expect(told(failure)).toEqual([given, sent(3)]);
 		})
 	);
 
-	it.effect('shrinks throwing replies and emits to the step that made the command', () =>
+	it.effect('shrinks throwing replies and emits to the step that asserts the command', () =>
 		Effect.gen(function* () {
 			for (const [options, problem] of [
 				[{ replies: throws('no reply') }, 'replies threw: Error: no reply'],
 				[{ emits: throws('no stream') }, 'emits threw: Error: no stream']
 			] as const) {
 				const failure = yield* Effect.flip(Exploration.check(talks(chat, options)));
-				expect(failure).toMatchObject({ step: 2, problem });
-				expect(failure.counterexample).toEqual([
+				expect(failure).toMatchObject({ step: 3, problem });
+				expect(told(failure)).toEqual([
 					'given Ready {"left":2,"turns":[]}',
-					expect.stringMatching(/^send Asked /)
+					expect.stringMatching(/^send Asked /),
+					expect.stringMatching(/^commands Ask /)
 				]);
 				const replayed = yield* Effect.flip(
 					Exploration.check(talks(chat, options), { replay: failure.replay ?? '' })
@@ -519,19 +750,22 @@ describe('Exploration', () => {
 			expect(failure).toEqual(
 				new Story.StoryFailure({
 					title: 'throws',
-					step: 3,
+					step: 4,
 					line: 'explore 100 runs of up to 30 steps, seed "throws"',
 					problem: 'decide threw: Error: revoked',
 					expected: undefined,
 					actual: undefined,
-					counterexample: [
-						'given {"active":0,"checkedAt":null,"source":"teachable"}',
-						'when Grant {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}',
-						'when Revoke'
-					],
-					replay: failure.replay ?? ''
+					counterexample: failure.counterexample,
+					replay: failure.replay ?? '',
+					code: failure.code
 				})
 			);
+			expect(told(failure)).toEqual([
+				'given {"active":0,"checkedAt":null,"source":"teachable"}',
+				'when Grant {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}',
+				'accepted Granted {"at":"2026-11-03T00:00:00.000Z","source":"teachable"}',
+				'when Revoke'
+			]);
 		})
 	);
 
@@ -542,19 +776,67 @@ describe('Exploration', () => {
 			});
 			const failure = yield* Effect.flip(Exploration.check(accepting));
 			expect(failure).toMatchObject({
-				step: 2,
+				step: 3,
 				problem: 'property accepted does not hold',
 				actual:
 					'{"after":{"active":0,"checkedAt":null,"source":"teachable"},' +
 					'"before":{"active":0,"checkedAt":null,"source":"teachable"},' +
 					'"command":{"_tag":"Revoke"},' +
-					'"decided":{"_tag":"Failure","failure":{"_tag":"NotActive"}}}',
-				counterexample: ['given {"active":0,"checkedAt":null,"source":"teachable"}', 'when Revoke']
+					'"decided":{"_tag":"Failure","failure":{"_tag":"NotActive"}}}'
 			});
+			expect(told(failure)).toEqual([
+				'given {"active":0,"checkedAt":null,"source":"teachable"}',
+				'when Revoke',
+				'rejected NotActive'
+			]);
+			expect(failure.code).toBe(
+				[
+					'const state = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.State)));',
+					'const command = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Command)));',
+					'const rejection = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Rejection)));',
+					'Decision.make(',
+					'\t"every command is accepted",',
+					'\tdecider,',
+					`\tdecision.given(state('{"active":0,"checkedAt":null,"source":"teachable"}')),`,
+					`\tdecision.when(command('{"_tag":"Revoke"}')),`,
+					`\tdecision.rejected(rejection('{"_tag":"NotActive"}'))`,
+					')'
+				].join('\n')
+			);
 			const replayed = yield* Effect.flip(
 				Exploration.check(accepting, { replay: failure.replay ?? '' })
 			);
 			expect(replayed.counterexample).toEqual(failure.counterexample);
+		})
+	);
+
+	it.effect('prints a counterexample decision as code, whatever its values', () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(
+				Exploration.check(
+					Exploration.decisions('a tally never resets', tally, {
+						given: Arbitrary.Constant(tally.initial),
+						properties: { never: () => false }
+					})
+				)
+			);
+			expect(failure.code).toBe(
+				[
+					'const state = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.State)));',
+					'const command = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Command)));',
+					'const event = Schema.decodeSync(Schema.fromJsonString(Schema.toCodecJson(decider.Event)));',
+					'Decision.make(',
+					'\t"a tally never resets",',
+					'\tdecider,',
+					`\tdecision.given(state('{"1st":{"_tag":"Some","value":"it\\'s \\\\"a\\\\""},"empty":{},"gaps":[null,"b"],"grid":[[1,"NaN"],[]],"left-over":"2","none":{"_tag":"None"},"note":null,"ratio":"Infinity"}')),`,
+					`\tdecision.when(command('{"_tag":"Reset"}')),`,
+					`\tdecision.accepted(event('[1,2]'))`,
+					')'
+				].join('\n')
+			);
+			expect(Tale.steps(pastedTally())).toEqual(failure.counterexample);
+			// A decision has no properties: the pasted path passes, ready for the assertion to add.
+			yield* Decision.run(pastedTally());
 		})
 	);
 
@@ -608,9 +890,7 @@ describe('Exploration', () => {
 			);
 			expect(failure.step).toBe(1);
 			expect(failure.problem).toBe('invariant checkedWhenActive does not hold');
-			expect(failure.counterexample).toEqual([
-				'given {"active":1,"checkedAt":null,"source":"teachable"}'
-			]);
+			expect(told(failure)).toEqual(['given {"active":1,"checkedAt":null,"source":"teachable"}']);
 		})
 	);
 });

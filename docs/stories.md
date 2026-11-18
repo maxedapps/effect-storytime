@@ -121,7 +121,7 @@ const signedOut = Story.make(
 
 ## Lines
 
-`Story.lines(story)` renders a story as plain lines from its value alone, without running it. A group adds no line of its own, and an `anyOrder` is the line `any order` with its steps indented by two spaces. Records, failures and `covers` all speak in these lines.
+`Story.lines(story)` renders a story as plain lines from its value alone, without running it. A group adds no line of its own, and an `anyOrder` is the line `any order` with its steps indented by two spaces. Failures and `covers` speak in these lines, and the story record keeps the same steps as data (`Tale.steps`, [story-record.md](story-record.md#steps-and-values)).
 
 <!-- snippet: test/docs/chat.test.ts#lines -->
 ```ts
@@ -152,14 +152,19 @@ expect(Tale.lines(talks)).toEqual([
 
 ## Running a story
 
-`Story.run(story)` gives `Effect<Story.Outcome<Model>, Story.StoryFailure>`. The outcome is `finals`, where each order the story ran in ended, and the sorted cases the story sent, produced or reached. A final is `{ order, model, final }`: the line numbers of the `anyOrder` steps as that order ran them (empty without an `anyOrder`), the final model, and the same model as a line. A nested `anyOrder` adds its own steps' numbers after those of the one around it. `Vitest.stories` runs it for you ([vitest.md](vitest.md)); call `Story.run` yourself only to look at the outcome.
+`Story.run(story)` gives `Effect<Story.Outcome<Model>, Story.StoryFailure>`. The outcome is `finals`, where each order the story ran in ended, and the sorted cases the story sent, produced or reached. A final is `{ order, model, final }`: the line numbers of the `anyOrder` steps as that order ran them (empty without an `anyOrder`), the final model, and the same model as the story record keeps it, a value with its tag and canonical JSON. A nested `anyOrder` adds its own steps' numbers after those of the one around it. `Vitest.stories` runs it for you ([vitest.md](vitest.md)); call `Story.run` yourself only to look at the outcome.
 
 <!-- snippet: test/docs/chat.test.ts#outcome -->
 ```ts
 const { finals, cases } = yield* Story.run(limited);
 // One final per order; a story without anyOrder has one, with an empty order.
 expect(finals).toEqual([
-	{ order: [], model: Limited.make({ turns: [] }), final: 'Limited {"turns":[]}' }
+	// `final` is the model as the story record keeps it.
+	{
+		order: [],
+		model: Limited.make({ turns: [] }),
+		final: { tag: 'Limited', value: { turns: [] } }
+	}
 ]);
 expect(cases).toEqual([
 	'Command.Ask',
@@ -171,9 +176,9 @@ expect(cases).toEqual([
 ]);
 // With an anyOrder, one final per order, named by the line numbers of its steps as they ran.
 const { finals: orders } = yield* Story.run(stops);
-expect(orders.map(({ order, final }) => [order, final])).toEqual([
-	[[5, 6], 'Ready {"left":2,"turns":[]}'],
-	[[6, 5], 'Ready {"left":2,"turns":[]}']
+expect(orders.map(({ order, model }) => [order, model])).toEqual([
+	[[5, 6], Ready.make({ left: 2, turns: [] })],
+	[[6, 5], Ready.make({ left: 2, turns: [] })]
 ]);
 ```
 
@@ -225,4 +230,4 @@ expect(failure).toMatchObject({
 | `Step<Model, Message, Command>`, `Steps` | types | One step, and a list of them. |
 | `Outcome<Model>` | interface | `{ finals, cases }`, with at least one final. |
 | `Final<Model>` | interface | `{ order, model, final }`, where one order ended. |
-| `StoryFailure` | `Schema.TaggedError` | `{ title, step, line, problem, expected?, actual?, counterexample?, replay? }`. The last two are set only by explorations. |
+| `StoryFailure` | `Schema.TaggedError` | `{ title, step, line, problem, expected?, actual?, counterexample?, replay?, code? }`. The last three are set only by explorations ([explorations.md](explorations.md#running-and-failures)). |

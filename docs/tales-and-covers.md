@@ -6,13 +6,14 @@ A tale is a story, a decision or an exploration. `Tale` works on any of them, so
 
 | Export | Kind | Meaning |
 | --- | --- | --- |
-| `lines(tale)` | `ReadonlyArray<string>` | The tale's lines, from its value alone. An exploration has one line. |
+| `steps(tale)` | `ReadonlyArray<StoryRecord.Step>` | The tale's steps as data, from its value alone, as the story record keeps them. An exploration has one step. |
+| `lines(tale)` | `ReadonlyArray<string>` | The tale's steps as lines. |
 | `run(tale)` | `Effect<Reached, StoryFailure>` | Runs the tale in memory. |
 | `cases(subject)` | `ReadonlyArray<string>` | Every case a Program or a Decider has. |
 | `covers(subject, tales)` | `Effect<void, StoryFailure \| Uncovered>` | Runs the tales and requires them to touch every case of the subject between them. |
 | `breaks(subject, states)` | `Effect<void, Unbroken>` | Requires each invariant of the subject to break on the state given for it, and only that invariant. |
 | `Tale` | interface | `{ _tag: 'Story' \| 'Exploration' \| 'Decision', title }`, plus the protocol the three implement. |
-| `Reached` | interface | `{ final?, finals?, cases }`, what a passing tale reached: a decision's `final` state as a line, or a story's `finals`, one `{ order, final }` per order. Explorations have neither. |
+| `Reached` | interface | `{ final?, finals?, cases }`, what a passing tale reached: a decision's `final` state as a value, or a story's `finals`, one `{ order, final }` per order. Explorations have neither. |
 | `Uncovered` | `Schema.TaggedError` | `{ missing }`, message `no tale touches <cases>`. |
 | `Unbroken` | `Schema.TaggedError` | `{ invariant, problem, actual? }`, message `breaking invariant <name>: <problem>`. |
 | `Judged<Value, Name>` | type | A Program or a Decider with invariants named `Name` on its `Value`, the subject `breaks` takes. |

@@ -28,7 +28,7 @@ Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The 
 | [strict-rules.md](strict-rules.md) | need to know what every tale checks and what it can't, or read a failure message |
 | [tales-and-covers.md](tales-and-covers.md) | run any tale, list a subject's cases, require every case to be touched or prove each invariant can fail |
 | [vitest.md](vitest.md) | register tales as tests, group them by rule and write the story record |
-| [story-record.md](story-record.md) | read the JSON report a test run writes |
+| [story-record.md](story-record.md) | read the JSON report a test run writes, or render it as a Markdown page |
 | [recipes.md](recipes.md) | build a process manager that drives a Decider and survives a crash |
 | [pitfalls.md](pitfalls.md) | hit a type error or a failure you don't understand |
 
@@ -37,6 +37,7 @@ Each module is a namespace (`Decider.make`, `Story.of`, `Vitest.Reporter`). The 
 - **Tale**: a story (about a Program), a decision (about a Decider) or an exploration (generated paths through either).
 - **Subject**: the Program or Decider a tale is about.
 - **Canonical JSON**: a value encoded by its Schema to JSON, with object keys sorted. Tales compare values by it, a command is identified by it (two commands with the same canonical JSON are the same command), and lines show it. It is the encoded side, so a `Schema.BooleanFromBit` field shows as `1`.
+- **Step**: one step of a tale as data: its verb, its label and its values, each value as its tag and its canonical JSON without the tag. The story record keeps steps ([story-record.md](story-record.md#steps-and-values)).
 - **Line**: a step as text, such as `send Asked {"text":"Why Effect?","turn":"t1"}`. A tagged value shows as its tag followed by its other fields as canonical JSON, or as the tag alone when it has no other fields (`send Stopped`). An untagged value shows as its canonical JSON.
 - **Case**: one member of a subject's tagged unions, written `Role.Tag`: `Model.Ready`, `Message.Asked` and `Command.Ask` for a Program, `State.X`, `Command.Grant`, `Event.Granted` and `Rejection.NotActive` for a Decider.
 
@@ -62,3 +63,4 @@ The ADRs in [`adrs/`](https://github.com/maxedapps/effect-storytime/tree/main/ad
 - [0007](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0007-predicates-leave-their-input-alone.md): invariants, properties and `satisfies` checks only read their input, and a Loop runs identical commands once.
 - [0008](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0008-typed-results-per-command.md): `decide` is one handler per command tag, so `handle` types each call by its command's events and rejections.
 - [0009](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0009-invariants-that-break-and-fresh-seeds.md): `breaks` proves each invariant can fail, and `STORYTIME_SEED` and `STORYTIME_RUNS` explore fresh paths on demand.
+- [0010](https://github.com/maxedapps/effect-storytime/blob/main/adrs/0010-steps-as-data-and-paste-ready-counterexamples.md): the story record keeps steps as data, `StoryRecord.markdown` renders it, and a failing exploration prints its counterexample as code that runs as a tale.

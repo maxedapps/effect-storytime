@@ -4,6 +4,7 @@
  */
 import { Data, Effect, Result, Schema } from 'effect';
 import { canonical, describer } from '../../internal/canonical.ts';
+import type { Path } from './tale.ts';
 
 export class Problem extends Data.Error<{
 	readonly message: string;
@@ -11,11 +12,14 @@ export class Problem extends Data.Error<{
 	readonly actual?: string;
 }> {}
 
-/** Where an explored path broke a rule, before the check knows the replay that reproduces it. */
+/**
+ * Where an explored path broke a rule, with the path as a tale, before the check knows the replay
+ * that reproduces it.
+ */
 export class Broken extends Data.Error<{
 	readonly step: number;
 	readonly problem: Problem;
-	readonly counterexample: ReadonlyArray<string>;
+	readonly counterexample: Path;
 }> {}
 
 /** Runs a user callback; a throw becomes a Problem naming it. */
